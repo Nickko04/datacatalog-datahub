@@ -1,7 +1,6 @@
 overwrite: true
 schema:
-    - '../datahub-graphql-core/src/main/resources/gms.graphql'
-    - '../datahub-frontend/conf/datahub-frontend.graphql'
+    - '../datahub-graphql-core/src/main/resources/*.graphql'
 config:
     scalars:
         Long: number
@@ -11,6 +10,9 @@ generates:
     src/types.generated.ts:
         plugins:
             - 'typescript'
+    src/possibleTypes.generated.ts:
+        plugins:
+            - 'fragment-matcher'
     src/:
         preset: near-operation-file
         presetConfig:

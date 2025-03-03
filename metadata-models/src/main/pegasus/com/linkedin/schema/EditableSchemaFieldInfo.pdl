@@ -1,6 +1,7 @@
 namespace com.linkedin.schema
 
 import com.linkedin.common.GlobalTags
+import com.linkedin.common.GlossaryTerms
 
 /**
  * SchemaField to describe metadata related to dataset schema.
@@ -24,12 +25,66 @@ record EditableSchemaFieldInfo {
   /**
    * Tags associated with the field
    */
+  @Relationship = {
+    "/tags/*/tag": {
+      "name": "EditableSchemaFieldTaggedWith",
+        "entityTypes": [ "tag" ]
+    }
+  }
   @Searchable = {
     "/tags/*/tag": {
       "fieldName": "editedFieldTags",
-      "fieldType": "URN_PARTIAL",
+      "fieldType": "URN",
       "boostScore": 0.5
-    }
+    },
+    "/tags/*/attribution/time": {
+        "fieldName": "editedFieldTagAttributionDates",
+        "fieldType": "DATETIME"
+      },
+    "/tags/*/attribution/actor": {
+        "fieldName": "editedFieldTagAttributionActors",
+        "fieldType": "URN",
+        "queryByDefault": false,
+      },
+    "/tags/*/attribution/source": {
+        "fieldName": "editedFieldTagAttributionSources",
+        "fieldType": "URN",
+        "queryByDefault": false,
+      },
   }
   globalTags: optional GlobalTags
+
+  /**
+   * Glossary terms associated with the field
+   */
+   @Relationship = {
+      "/terms/*/urn": {
+        "name": "EditableSchemaFieldWithGlossaryTerm",
+        "entityTypes": [ "glossaryTerm" ]
+     }
+   }
+   @Searchable = {
+    "/terms/*/urn": {
+      "fieldName": "editedFieldGlossaryTerms",
+      "fieldType": "URN",
+      "boostScore": 0.5,
+      "includeSystemModifiedAt": true,
+      "systemModifiedAtFieldName": "schemaFieldTermsModifiedAt"
+    },
+    "/terms/*/attribution/time": {
+        "fieldName": "editedFieldTermAttributionDates",
+        "fieldType": "DATETIME"
+      },
+    "/terms/*/attribution/actor": {
+        "fieldName": "editedFieldTermAttributionActors",
+        "fieldType": "URN",
+        "queryByDefault": false,
+      },
+    "/terms/*/attribution/source": {
+        "fieldName": "editedFieldTermAttributionSources",
+        "fieldType": "URN",
+        "queryByDefault": false,
+      },
+  }
+  glossaryTerms: optional GlossaryTerms
 }

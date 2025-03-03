@@ -1,15 +1,16 @@
 import React from 'react';
 import { Redirect, useHistory, useLocation, useParams } from 'react-router';
 import * as QueryString from 'query-string';
-import { Affix, Alert } from 'antd';
+import { Affix } from 'antd';
 import { BrowseCfg } from '../../conf';
 import { BrowseResults } from './BrowseResults';
-import { SearchablePage } from '../search/SearchablePage';
 import { useGetBrowseResultsQuery } from '../../graphql/browse.generated';
-import { BrowsePath } from './BrowsePath';
+import { LegacyBrowsePath } from './LegacyBrowsePath';
 import { PageRoutes } from '../../conf/Global';
 import { useEntityRegistry } from '../useEntityRegistry';
 import { Message } from '../shared/Message';
+import { scrollToTop } from '../shared/searchUtils';
+import { ErrorSection } from '../shared/error/ErrorSection';
 
 type BrowseResultsPageParams = {
     type: string;
@@ -38,13 +39,11 @@ export const BrowseResultsPage = () => {
                 filters: null,
             },
         },
+        fetchPolicy: 'cache-first',
     });
 
-    if (error || (!loading && !error && !data)) {
-        return <Alert type="error" message={error?.message || 'Entity failed to load'} />;
-    }
-
     const onChangePage = (newPage: number) => {
+        scrollToTop();
         history.push({
             pathname: rootPath,
             search: `&page=${newPage}`,
@@ -56,24 +55,25 @@ export const BrowseResultsPage = () => {
     }
 
     return (
-        <SearchablePage>
-            <Affix offsetTop={64}>
-                <BrowsePath type={entityType} path={path} isBrowsable />
+        <>
+            <Affix offsetTop={60}>
+                <LegacyBrowsePath type={entityType} path={path} isBrowsable />
             </Affix>
+            {error && <ErrorSection />}
             {loading && <Message type="loading" content="Loading..." style={{ marginTop: '10%' }} />}
-            {data && data.browse && (
+            {data && data.browse && !loading && (
                 <BrowseResults
                     type={entityType}
                     rootPath={rootPath}
                     title={path.length > 0 ? path[path.length - 1] : entityRegistry.getCollectionName(entityType)}
                     page={page}
                     pageSize={BrowseCfg.RESULTS_PER_PAGE}
-                    groups={data.browse.metadata.groups}
+                    groups={data.browse.groups}
                     entities={data.browse.entities}
                     totalResults={data.browse.total}
                     onChangePage={onChangePage}
                 />
             )}
-        </SearchablePage>
+        </>
     );
 };

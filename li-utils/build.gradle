@@ -1,12 +1,29 @@
-apply plugin: 'java'
-apply plugin: 'pegasus'
+
+plugins {
+    id 'java-library'
+    id 'pegasus'
+}
+
+apply from: "../gradle/coverage/java-coverage.gradle"
+
 
 dependencies {
-    compile spec.product.pegasus.data
+    api spec.product.pegasus.data
+    implementation externalDependency.commonsLang
+    implementation(externalDependency.reflections) {
+        exclude group: 'com.google.guava', module: 'guava'
+    }
+    implementation externalDependency.guava
 
-    dataModel externalDependency.gmaCoreModels
+    implementation externalDependency.slf4jApi
+    compileOnly externalDependency.lombok
+    annotationProcessor externalDependency.lombok
 
-    testCompile externalDependency.assertJ
+    testImplementation externalDependency.assertJ
+    testImplementation externalDependency.commonsIo
+    testImplementation project(':test-models')
+    testImplementation project(path: ':test-models', configuration: 'testDataTemplate')
+    testImplementation externalDependency.testng
 }
 
 idea {
@@ -15,5 +32,5 @@ idea {
     }
 }
 
-// Need to compile backing java definitions with the data template.
+// Need to compile backing java parameterDefinitions with the data template.
 sourceSets.mainGeneratedDataTemplate.java.srcDirs('src/main/javaPegasus/')

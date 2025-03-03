@@ -1,23 +1,28 @@
 # DataHub Town Halls
 
-We hold regular virtual town hall meetings to meet with DataHub community. 
-Currently it's held on the fourth Friday of every month (with some exceptions such as holiday weekends).
-It's the perfect venue to meet the team behind DataHub and other users, as well as to ask higher-level questions, such as roadmap and product direction.
-From time to time we also use the opportunity to showcase upcoming features.
+We hold virtual Town Hall meetings with the DataHub Community on the last Thursday of every month (with some exceptions due to holidays).
 
-## Coming up - May 27th, 2021 @ 9 AM US Pacific
+It's a great opportunity for the Community to come together to discuss project and roadmap updates, see live demos of upcoming features, and hear case studies from other Community Members.
 
-## Meeting Invite
+## Upcoming Events
 
-You can join with this link https://zoom.datahubproject.io, or [signup](https://docs.google.com/forms/d/1r9bObXKS3tgKpISqqO3rw4yQog5zwuaFxg8IrJGUbvQ/) to get a calendar invite. 
+Check out the DataHub Community Calendar to RSVP to upcoming events!
 
-- Topic Proposals: [submit here](https://docs.google.com/forms/d/1v2ynbAXjJlqY97xE_X1DAntNrXDznOFiNfryUkMPtkI/)
-- Signup to get an invite: [here](https://docs.google.com/forms/d/1r9bObXKS3tgKpISqqO3rw4yQog5zwuaFxg8IrJGUbvQ/)
+<p align="center">
+  <iframe
+    src="https://lu.ma/embed/calendar/cal-lom9HnTVnZkKsNh/events"
+    width="80%"
+    height="450"
+    frameborder="0"
+    allowfullscreen=""
+    aria-hidden="false"
+    tabindex="0"
+  ></iframe>
+</p>
 
-## Agenda
+## Town Hall History
 
-- Stay tuned!
+See our Town Hall history for the recordings and summaries of the past town halls.
 
-## Past Meetings
-
-See [Town Hall History](townhall-history.md) for recordings of past town halls.
+* [Town Hall Events (July 2023~)](https://www.linkedin.com/company/acryl-data/events/)
+* [Town Hall Events (~June 2023)](townhall-history.md)

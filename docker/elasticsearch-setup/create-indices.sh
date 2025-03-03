@@ -1,181 +1,203 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
 : ${DATAHUB_ANALYTICS_ENABLED:=true}
 : ${USE_AWS_ELASTICSEARCH:=false}
+: ${ELASTICSEARCH_INSECURE:=false}
+: ${DUE_SHARDS:=1}
+: ${DUE_REPLICAS:=1}
 
+# protocol: http or https?
 if [[ $ELASTICSEARCH_USE_SSL == true ]]; then
     ELASTICSEARCH_PROTOCOL=https
 else
     ELASTICSEARCH_PROTOCOL=http
 fi
+echo -e "going to use protocol: $ELASTICSEARCH_PROTOCOL"
 
-if [[ -z $ELASTICSEARCH_USERNAME ]]; then
-    ELASTICSEARCH_HOST_URL=$ELASTICSEARCH_HOST
-else
-    ELASTICSEARCH_HOST_URL=$ELASTICSEARCH_USERNAME:$ELASTICSEARCH_PASSWORD@$ELASTICSEARCH_HOST
+# Elasticsearch URL to be suffixed with a resource address
+ELASTICSEARCH_URL="$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST:$ELASTICSEARCH_PORT"
+
+# set auth header if none is given
+if [[ -z $ELASTICSEARCH_AUTH_HEADER ]]; then
+  if [[ ! -z $ELASTICSEARCH_USERNAME ]]; then
+    # no auth header given, but username is defined -> use it to create the auth header
+    AUTH_TOKEN=$(echo -ne "$ELASTICSEARCH_USERNAME:$ELASTICSEARCH_PASSWORD" | base64 --wrap 0)
+    ELASTICSEARCH_AUTH_HEADER="Authorization:Basic $AUTH_TOKEN"
+    echo -e "going to use elastic headers based on username and password"
+  else
+    # no auth header or username given -> use default auth header
+    ELASTICSEARCH_AUTH_HEADER="Accept: */*"
+    echo -e "going to use default elastic headers"
+  fi
 fi
 
-function get_index_name() {
-  if [[ -z "$INDEX_PREFIX" ]]; then
-    echo $1
+# will be using this for all curl communication with Elasticsearch:
+CURL_ARGS=(
+  --silent
+  --header "$ELASTICSEARCH_AUTH_HEADER"
+)
+# ... also optionally use --insecure
+if [[ $ELASTICSEARCH_INSECURE == true ]]; then
+  CURL_ARGS+=(--insecure)
+fi
+
+# index prefix used throughout the script
+if [[ -z "$INDEX_PREFIX" ]]; then
+  PREFIX=''
+  echo -e "not using any prefix"
+else
+  PREFIX="${INDEX_PREFIX}_"
+  echo -e "going to use prefix: '$PREFIX'"
+fi
+
+# path where index definitions are stored
+INDEX_DEFINITIONS_ROOT=/index/usage-event
+
+
+# check Elasticsearch for given index/resource (first argument)
+# if it doesn't exist (http code 404), use the given file (second argument) to create it
+function create_if_not_exists {
+  RESOURCE_ADDRESS="$1"
+  RESOURCE_DEFINITION_NAME="$2"
+
+  # query ES to see if the resource already exists
+  RESOURCE_STATUS=$(curl "${CURL_ARGS[@]}" -o /dev/null -w "%{http_code}\n" "$ELASTICSEARCH_URL/$RESOURCE_ADDRESS")
+  echo -e "\n>>> GET $RESOURCE_ADDRESS response code is $RESOURCE_STATUS"
+
+  if [ $RESOURCE_STATUS -eq 200 ]; then
+    # resource already exists -> nothing to do
+    echo -e ">>> $RESOURCE_ADDRESS already exists ✓"
+
+  elif [ $RESOURCE_STATUS -eq 404 ]; then
+    # resource doesn't exist -> need to create it
+    echo -e ">>> creating $RESOURCE_ADDRESS because it doesn't exist ..."
+    # use the file at given path as definition, but first replace all occurences of `PREFIX`
+    # placeholder within the file with the actual prefix value
+    TMP_SOURCE_PATH="/tmp/$RESOURCE_DEFINITION_NAME"
+    sed -e "s/PREFIX/$PREFIX/g" "$INDEX_DEFINITIONS_ROOT/$RESOURCE_DEFINITION_NAME" \
+       | sed -e "s/DUE_SHARDS/$DUE_SHARDS/g" \
+       | sed -e "s/DUE_REPLICAS/$DUE_REPLICAS/g" \
+       | tee -a "$TMP_SOURCE_PATH"
+    curl "${CURL_ARGS[@]}" -XPUT "$ELASTICSEARCH_URL/$RESOURCE_ADDRESS" -H 'Content-Type: application/json' --data "@$TMP_SOURCE_PATH"
+
+  elif [ $RESOURCE_STATUS -eq 403 ]; then
+    # probably authorization fail
+    echo -e ">>> forbidden access to $RESOURCE_ADDRESS ! -> exiting"
+    exit 1
+
   else
-    echo "${INDEX_PREFIX}_$1"
-  fi
-}
-
-function generate_index_file() {
-  jq -n \
-    --slurpfile settings "$1" \
-    --slurpfile mappings "$2" \
-    '.settings=$settings[0] | .mappings=$mappings[0]' > "$3"
-}
-
-function check_reindex() {
-    initial_documents=$(curl -XGET "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$1/_count" -H 'Content-Type: application/json' | jq '.count')
-    for i in $(seq 30); do
-      echo $i
-      reindexed_documents=$(curl -XGET "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$2/_count" -H 'Content-Type: application/json' | jq '.count')
-      if [[ $reindexed_documents == "$initial_documents" ]]; then
-        echo -e "\nPost-reindex document reconcialiation completed. doc_source_index_count: $initial_documents; doc_target_index_count: $reindexed_documents"
-        return 0
-      else
-        sleep 3
+    # when `USE_AWS_ELASTICSEARCH` was forgotten to be set to `true` when running against AWS ES OSS,
+    # this script will use wrong paths (e.g. `_ilm/policy/` instead of AWS-compatible `_opendistro/_ism/policies/`)
+    # and the ES endpoint will return `401 Unauthorized` or `405 Method Not Allowed`
+    # let's use this as chance to point that wrong config might be used!
+    if [ $RESOURCE_STATUS -eq 401 ] || [ $RESOURCE_STATUS -eq 405 ]; then
+      if [[ $USE_AWS_ELASTICSEARCH == false ]] && [[ $ELASTICSEARCH_URL == *"amazonaws"* ]]; then
+        echo "... looks like AWS OpenSearch is used; please set USE_AWS_ELASTICSEARCH env value to true"
       fi
-    done
-
-    echo -e "\nPost-reindex document reconcialiation failed. doc_source_index_count: $initial_documents; doc_target_index_count: $reindexed_documents"
-    return 1
-}
-
-function reindex() {
-  source_index=$1
-  target_index="$1_$(date +%s)"
-
-  #create target index with latest index config
-  curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$target_index" -H 'Content-Type: application/json' --data @/tmp/data
-
-  #reindex the documents in source index to target index.
-  # One of the assumption here is that we only add properties to document when index-config is evolved.
-  # In case a property is deleted from document, it will still be reindexed in target index as default behaviour and
-  # it is not breaking the code. If still needs to be purged from target index, use "removed" property in POST data.
-  curl -XPOST "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_reindex?pretty" -H 'Content-Type: application/json' \
-    -d "{\"source\":{\"index\":\"$source_index\"},\"dest\":{\"index\":\"$target_index\"}}"
-
-  if check_reindex "$source_index" "$target_index"
-  then
-    #checking if source index is concrete index or alias
-    if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_alias/$source_index") -eq 404 ]
-    then
-      curl -XDELETE "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$source_index"
-    else
-      concrete_index_name=$(curl -XGET "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_alias/$source_index" | jq 'keys[]' | head -1 | tr -d \")
-      curl -XDELETE "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$concrete_index_name"
     fi
 
-    curl -XPOST "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_aliases" -H 'Content-Type: application/json' \
-      -d "{\"actions\":[{\"remove\":{\"index\":\"*\",\"alias\":\"$source_index\"}},{\"add\":{\"index\":\"$target_index\",\"alias\":\"$source_index\"}}]}"
-
-    echo -e "\nReindexing to $target_index succeded"
-    return 0
-  else
-    curl -XDELETE "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$target_index"
-    echo -e "\nReindexing to $target_index failed"
-    return 1
+    echo -e ">>> failed to GET $RESOURCE_ADDRESS ! -> exiting"
+    exit 1
   fi
 }
 
-function create_index() {
-  generate_index_file "index/$2" "index/$3" /tmp/data
+# Update ISM policy. Non-fatal if policy cannot be updated.
+function update_ism_policy {
+  RESOURCE_ADDRESS="$1"
+  RESOURCE_DEFINITION_NAME="$2"
 
-  #checking if index(or alias) exists
-  if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$1") -eq 404 ]
-  then
-    echo -e '\ncreating index' "$1"
+  TMP_CURRENT_POLICY_PATH="/tmp/current-$RESOURCE_DEFINITION_NAME"
 
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$1" -H 'Content-Type: application/json' --data @/tmp/data
-    return 0
-  else
-    echo -e '\ncomparing with existing version of index' "$1"
+  # Get existing policy
+  RESOURCE_STATUS=$(curl "${CURL_ARGS[@]}" -o $TMP_CURRENT_POLICY_PATH -w "%{http_code}\n" "$ELASTICSEARCH_URL/$RESOURCE_ADDRESS")
+  echo -e "\n>>> GET $RESOURCE_ADDRESS response code is $RESOURCE_STATUS"
 
-    setting_keys_regex=$(jq '.index | keys[]' "index/$2" | xargs | sed 's/ /|/g')
-    curl -XGET "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$1/_settings" | \
-      jq '.. | .settings? | select(. != null)' | \
-      jq --arg KEYS_REGEX "$setting_keys_regex" '.index | with_entries(select(.key | match($KEYS_REGEX))) | {"index":.}' \
-      > /tmp/existing_setting
-
-    curl -XGET "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/$1/_mapping" | \
-      jq '.. | .mappings? | select(. != null)' \
-      > /tmp/existing_mapping
-
-    generate_index_file /tmp/existing_setting /tmp/existing_mapping /tmp/existing
-
-    jq -S . /tmp/existing > /tmp/existing_sorted
-    jq -S . /tmp/data > /tmp/data_sorted
-    if diff /tmp/existing_sorted /tmp/data_sorted
-    then
-      echo -e "\nno changes to index $1 mappings and settings"
-      return 0
-    else
-      echo -e "\nupdating index" "$1"
-
-      reindex "$1" && return 0 || return 1
-    fi
+  if [ $RESOURCE_STATUS -ne 200 ]; then
+    echo -e ">>> Could not get ISM policy $RESOURCE_ADDRESS. Ignoring."
+    return
   fi
+
+  SEQ_NO=$(cat $TMP_CURRENT_POLICY_PATH | jq -r '._seq_no')
+  PRIMARY_TERM=$(cat $TMP_CURRENT_POLICY_PATH | jq -r '._primary_term')
+
+  TMP_NEW_RESPONSE_PATH="/tmp/response-$RESOURCE_DEFINITION_NAME"
+  TMP_NEW_POLICY_PATH="/tmp/new-$RESOURCE_DEFINITION_NAME"
+  sed -e "s/PREFIX/$PREFIX/g" "$INDEX_DEFINITIONS_ROOT/$RESOURCE_DEFINITION_NAME" \
+      | sed -e "s/DUE_SHARDS/$DUE_SHARDS/g" \
+      | sed -e "s/DUE_REPLICAS/$DUE_REPLICAS/g" \
+      | tee -a "$TMP_NEW_POLICY_PATH"
+  RESOURCE_STATUS=$(curl "${CURL_ARGS[@]}" -XPUT "$ELASTICSEARCH_URL/$RESOURCE_ADDRESS?if_seq_no=$SEQ_NO&if_primary_term=$PRIMARY_TERM" \
+    -H 'Content-Type: application/json' -w "%{http_code}\n" -o $TMP_NEW_RESPONSE_PATH --data "@$TMP_NEW_POLICY_PATH")
+  echo -e "\n>>> PUT $RESOURCE_ADDRESS response code is $RESOURCE_STATUS"
 }
 
+# create indices for ES (non-AWS)
 function create_datahub_usage_event_datastream() {
-  if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_ilm/policy/datahub_usage_event_policy") -eq 404 ]
-  then
-    echo -e "\ncreating datahub_usage_event_policy"
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_ilm/policy/datahub_usage_event_policy" -H 'Content-Type: application/json' --data @/index/usage-event/policy.json
-  else
-    echo -e "\ndatahub_usage_event_policy exists"
-  fi
-  if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_index_template/datahub_usage_event_index_template") -eq 404 ]
-  then
-    echo -e "\ncreating datahub_usage_event_index_template"
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_index_template/datahub_usage_event_index_template" -H 'Content-Type: application/json' --data @/index/usage-event/index_template.json
-  else
-    echo -e "\ndatahub_usage_event_index_template exists"
-  fi
+  # non-AWS env requires creation of three resources for Datahub usage events:
+  #   1. ILM policy
+  create_if_not_exists "_ilm/policy/${PREFIX}datahub_usage_event_policy" policy.json
+  #   2. index template
+  create_if_not_exists "_index_template/${PREFIX}datahub_usage_event_index_template" index_template.json
+  #   3. although indexing request creates the data stream, it's not queryable before creation, causing GMS to throw exceptions
+  create_if_not_exists "_data_stream/${PREFIX}datahub_usage_event" "datahub_usage_event"
 }
 
+# create indices for ES OSS (AWS)
 function create_datahub_usage_event_aws_elasticsearch() {
-  if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_opendistro/_ism/policies/datahub_usage_event_policy") -eq 404 ]
-  then
-    echo -e "\ncreating datahub_usage_event_policy"
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_opendistro/_ism/policies/datahub_usage_event_policy" -H 'Content-Type: application/json' --data @/index/usage-event/aws_es_ism_policy.json
-  else
-    echo -e "\ndatahub_usage_event_policy exists"
+  # AWS env requires creation of three resources for Datahub usage events:
+  #   1. ISM policy
+  create_if_not_exists "_opendistro/_ism/policies/${PREFIX}datahub_usage_event_policy" aws_es_ism_policy.json
+
+  #   1.1 ISM policy update if it already existed
+  if [ $RESOURCE_STATUS -eq 200 ]; then
+    update_ism_policy "_opendistro/_ism/policies/${PREFIX}datahub_usage_event_policy" aws_es_ism_policy.json
   fi
-  if [ $(curl -o /dev/null -s -w "%{http_code}" "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_template/datahub_usage_event_index_template") -eq 404 ]
-  then
-    echo -e "\ncreating datahub_usage_event_index_template"
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/_template/datahub_usage_event_index_template" -H 'Content-Type: application/json' --data @/index/usage-event/aws_es_index_template.json
-    curl -XPUT "$ELASTICSEARCH_PROTOCOL://$ELASTICSEARCH_HOST_URL:$ELASTICSEARCH_PORT/datahub_usage_event-000001"  -H 'Content-Type: application/json' --data "{\"aliases\":{\"datahub_usage_event\":{\"is_write_index\":true}}}"
-  else
-    echo -e "\ndatahub_usage_event_index_template exists"
+
+  #   2. index template
+  create_if_not_exists "_template/${PREFIX}datahub_usage_event_index_template" aws_es_index_template.json
+
+  #   3. event index datahub_usage_event-000001
+  #     (note that AWS *rollover* indices need to use `^.*-\d+$` naming pattern)
+  #     -> https://aws.amazon.com/premiumsupport/knowledge-center/opensearch-failed-rollover-index/
+  INDEX_SUFFIX="000001"
+  #     ... but first check whether `datahub_usage_event` wasn't already autocreated by GMS before `datahub_usage_event-000001`
+  #     (as is common case when this script was initially run without properly setting `USE_AWS_ELASTICSEARCH` to `true`)
+  #     -> https://github.com/datahub-project/datahub/issues/5376
+  USAGE_EVENT_STATUS=$(curl "${CURL_ARGS[@]}" -o /dev/null -w "%{http_code}\n" "$ELASTICSEARCH_URL/${PREFIX}datahub_usage_event")
+  if [ $USAGE_EVENT_STATUS -eq 200 ]; then
+    USAGE_EVENT_DEFINITION=$(curl "${CURL_ARGS[@]}" "$ELASTICSEARCH_URL/${PREFIX}datahub_usage_event")
+    # the definition is expected to contain "datahub_usage_event-000001" string
+    if [[ $USAGE_EVENT_DEFINITION != *"datahub_usage_event-"* ]]; then
+      # ... if it doesn't, we need to drop it
+      echo -e "\n>>> deleting invalid datahub_usage_event ..."
+      curl "${CURL_ARGS[@]}" -XDELETE "$ELASTICSEARCH_URL/${PREFIX}datahub_usage_event"
+      # ... and then recreate it below
+    fi
   fi
+
+  #   ... now we are safe to create the index
+  create_if_not_exists "${PREFIX}datahub_usage_event-$INDEX_SUFFIX" aws_es_index.json
 }
 
-create_index $(get_index_name chartdocument) chart/settings.json chart/mappings.json || exit 1
-create_index $(get_index_name corpuserinfodocument) corp-user/settings.json corp-user/mappings.json  || exit 1
-create_index $(get_index_name dashboarddocument) dashboard/settings.json dashboard/mappings.json  || exit 1
-create_index $(get_index_name datajobdocument) datajob/settings.json datajob/mappings.json || exit 1
-create_index $(get_index_name dataflowdocument) dataflow/settings.json dataflow/mappings.json || exit 1
-create_index $(get_index_name dataprocessdocument) data-process/settings.json data-process/mappings.json || exit 1
-create_index $(get_index_name datasetdocument) dataset/settings.json dataset/mappings.json || exit 1
-create_index $(get_index_name mlmodeldocument) ml-model/settings.json ml-model/mappings.json || exit 1
-create_index $(get_index_name tagdocument) tags/settings.json tags/mappings.json || exit 1
-create_index $(get_index_name glossaryterminfodocument) glossary/term/settings.json glossary/term/mappings.json || exit 1
-create_index $(get_index_name glossarynodeinfodocument) glossary/node/settings.json glossary/node/mappings.json || exit 1
 if [[ $DATAHUB_ANALYTICS_ENABLED == true ]]; then
+  echo -e "\n datahub_analytics_enabled: $DATAHUB_ANALYTICS_ENABLED"
   if [[ $USE_AWS_ELASTICSEARCH == false ]]; then
     create_datahub_usage_event_datastream || exit 1
   else
     create_datahub_usage_event_aws_elasticsearch || exit 1
   fi
+else
+  echo -e "\ndatahub_analytics_enabled: $DATAHUB_ANALYTICS_ENABLED"
+  DATAHUB_USAGE_EVENT_INDEX_RESPONSE_CODE=$(curl "${CURL_ARGS[@]}" -o /dev/null -w "%{http_code}" "$ELASTICSEARCH_URL/_cat/indices/${PREFIX}datahub_usage_event")
+  if [ $DATAHUB_USAGE_EVENT_INDEX_RESPONSE_CODE -eq 404 ]
+  then
+    echo -e "\ncreating ${PREFIX}datahub_usage_event"
+    curl "${CURL_ARGS[@]}" -XPUT "$ELASTICSEARCH_URL/${PREFIX}datahub_usage_event"
+  elif [ $DATAHUB_USAGE_EVENT_INDEX_RESPONSE_CODE -eq 200 ]; then
+    echo -e "\n${PREFIX}datahub_usage_event exists"
+  elif [ $DATAHUB_USAGE_EVENT_INDEX_RESPONSE_CODE -eq 403 ]; then
+    echo -e "Forbidden so exiting"
+  fi
 fi
-

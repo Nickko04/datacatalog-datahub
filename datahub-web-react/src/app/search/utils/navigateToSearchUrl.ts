@@ -1,41 +1,45 @@
 import * as QueryString from 'query-string';
 import { RouteComponentProps } from 'react-router-dom';
-
 import filtersToQueryStringParams from './filtersToQueryStringParams';
 import { EntityType, FacetFilterInput } from '../../../types.generated';
 import { PageRoutes } from '../../../conf/Global';
-import EntityRegistry from '../../entity/EntityRegistry';
+import { UnionType } from './constants';
 
 export const navigateToSearchUrl = ({
     type: newType,
     query: newQuery,
     page: newPage = 1,
     filters: newFilters,
+    unionType = UnionType.AND,
+    selectedSortOption,
     history,
-    entityRegistry,
 }: {
     type?: EntityType;
     query?: string;
     page?: number;
     filters?: Array<FacetFilterInput>;
     history: RouteComponentProps['history'];
-    entityRegistry: EntityRegistry;
+    selectedSortOption?: string;
+    unionType?: UnionType;
 }) => {
+    const constructedFilters = newFilters || [];
+    if (newType) {
+        constructedFilters.push({ field: 'entity', values: [newType] });
+    }
+
     const search = QueryString.stringify(
         {
-            ...filtersToQueryStringParams(newFilters),
-            query: newQuery,
+            ...filtersToQueryStringParams(constructedFilters),
+            query: encodeURIComponent(newQuery || ''),
             page: newPage,
+            unionType,
+            sortOption: selectedSortOption,
         },
         { arrayFormat: 'comma' },
     );
 
     history.push({
-        pathname: `${PageRoutes.SEARCH}/${
-            newType && entityRegistry.getSearchEntityTypes().indexOf(newType) >= 0
-                ? entityRegistry.getPathName(newType)
-                : ''
-        }`,
+        pathname: `${PageRoutes.SEARCH}`,
         search,
     });
 };

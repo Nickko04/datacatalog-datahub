@@ -1,41 +1,64 @@
 # Defining environment
-ARG APP_ENV=prod
+ARG APP_ENV=full
+ARG BASE_IMAGE=acryldata/datahub-ingestion-base
+ARG DOCKER_VERSION=head-full
+ARG DEBIAN_REPO_URL=https://deb.debian.org/debian
+ARG UBUNTU_REPO_URL=http://ports.ubuntu.com/ubuntu-ports
+ARG PIP_MIRROR_URL=https://pypi.python.org/simple
 
-FROM python:3.8 as base
-# ENV DOCKERIZE_VERSION v0.6.1
-# RUN apk --no-cache add curl tar \
-#     && curl https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-runner/9.4.20.v20190813/jetty-runner-9.4.20.v20190813.jar --output jetty-runner.jar \
-#     && curl -L https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz | tar -C /usr/local/bin -xzv
-RUN apt-get update && apt-get install -y \
-        librdkafka-dev \
-        python3-ldap \
-        libldap2-dev \
-        libsasl2-dev \
-        ldap-utils \
-    && python -m pip install --upgrade pip wheel setuptools
+FROM $BASE_IMAGE:$DOCKER_VERSION AS base
 
-FROM openjdk:8 as prod-build
-COPY . /datahub-src
-# RUN cd /datahub-src && ./gradlew :metadata-events:mxe-schemas:build
+# Optionally set corporate mirror for deb
+USER 0
+ARG DEBIAN_REPO_URL
+ARG UBUNTU_REPO_URL
+RUN if [ "${DEBIAN_REPO_URL}" != "http://deb.debian.org/debian" ] ; then sed -i "s#http.*://deb.debian.org/debian#${DEBIAN_REPO_URL}#g" /etc/apt/sources.list ; fi
+RUN if [ "${UBUNTU_REPO_URL}" != "http://ports.ubuntu.com/ubuntu-ports" ] ; then sed -i "s#http.*://ports.ubuntu.com/ubuntu-ports#${UBUNTU_REPO_URL}#g" /etc/apt/sources.list ; fi
+USER datahub
 
-FROM base as prod-codegen
-COPY --from=prod-build /datahub-src /datahub-src
-# RUN cd /datahub-src/metadata-ingestion && \
-#     pip install -e ".[base]" && \
-#     ./scripts/codegen.sh
+# Optionally set corporate mirror for pip
+ARG PIP_MIRROR_URL
+RUN if [ "${PIP_MIRROR_URL}" != "https://pypi.python.org/simple" ] ; then pip config set global.index-url ${PIP_MIRROR_URL} ; fi
+ENV UV_INDEX_URL=${PIP_MIRROR_URL}
 
-FROM base as prod-install
-COPY --from=prod-codegen /datahub-src/metadata-ingestion /datahub-ingestion
-RUN cd /datahub-ingestion && \
-    pip install ".[all]"
+COPY --chown=datahub ./metadata-ingestion /metadata-ingestion
+COPY --chown=datahub ./metadata-ingestion-modules/airflow-plugin /metadata-ingestion/airflow-plugin
 
-FROM base as dev-install
+ARG RELEASE_VERSION
+WORKDIR /metadata-ingestion
+RUN sed -i.bak "s/__version__ = .*$/__version__ = \"$(echo $RELEASE_VERSION|sed s/-/+/)\"/" src/datahub/_version.py && \
+    sed -i.bak "s/__version__ = .*$/__version__ = \"$(echo $RELEASE_VERSION|sed s/-/+/)\"/" airflow-plugin/src/datahub_airflow_plugin/_version.py && \
+    cat src/datahub/_version.py | grep __version__ && \
+    cat airflow-plugin/src/datahub_airflow_plugin/_version.py | grep __version__
+
+FROM base AS slim-install
+
+RUN --mount=type=cache,target=/datahub-ingestion/.cache/uv,uid=1000,gid=1000 \
+    UV_LINK_MODE=copy uv pip install -e ".[base,datahub-rest,datahub-kafka,snowflake,bigquery,redshift,mysql,postgres,hive,clickhouse,glue,dbt,looker,lookml,tableau,powerbi,superset,datahub-business-glossary]"
+
+FROM base AS full-install-build
+
+USER 0
+RUN apt-get update && apt-get install -y -qq maven
+
+USER datahub
+COPY ./docker/datahub-ingestion/pyspark_jars.sh .
+
+RUN --mount=type=cache,target=/datahub-ingestion/.cache/uv,uid=1000,gid=1000 \
+    UV_LINK_MODE=copy uv pip install -e ".[base,all]" "./airflow-plugin[plugin-v2]" && \
+    ./pyspark_jars.sh && \
+    datahub --version
+
+FROM base AS full-install
+
+COPY --from=full-install-build ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+FROM base AS dev-install
 # Dummy stage for development. Assumes code is built on your machine and mounted to this image.
 # See this excellent thread https://github.com/docker/cli/issues/1134
 
-FROM ${APP_ENV}-install as final
+FROM ${APP_ENV}-install AS final
 
-RUN addgroup --system datahub && adduser --system datahub --ingroup datahub
+WORKDIR /datahub-ingestion
+
 USER datahub
-
-ENTRYPOINT [ "datahub" ]

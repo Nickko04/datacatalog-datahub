@@ -1,7 +1,8 @@
 import { UserOutlined } from '@ant-design/icons';
 import * as React from 'react';
 import { CorpUser, EntityType, SearchResult } from '../../../types.generated';
-import { Entity, IconStyleType, PreviewType } from '../Entity';
+import { Entity, EntityCapabilityType, IconStyleType, PreviewType } from '../Entity';
+import { getDataForEntityType } from '../shared/containers/profile/utils';
 import { Preview } from './preview/Preview';
 import UserProfile from './UserProfile';
 
@@ -11,20 +12,20 @@ import UserProfile from './UserProfile';
 export class UserEntity implements Entity<CorpUser> {
     type: EntityType = EntityType.CorpUser;
 
-    icon = (fontSize: number, styleType: IconStyleType) => {
+    icon = (fontSize: number, styleType: IconStyleType, color?: string) => {
         if (styleType === IconStyleType.TAB_VIEW) {
-            return <UserOutlined style={{ fontSize }} />;
+            return <UserOutlined style={{ fontSize, color }} />;
         }
 
         if (styleType === IconStyleType.HIGHLIGHT) {
-            return <UserOutlined style={{ fontSize, color: 'rgb(144 163 236)' }} />;
+            return <UserOutlined style={{ fontSize, color }} />;
         }
 
         return (
             <UserOutlined
                 style={{
                     fontSize,
-                    color: '#BFBFBF',
+                    color: color || '#BFBFBF',
                 }}
             />
         );
@@ -38,22 +39,46 @@ export class UserEntity implements Entity<CorpUser> {
 
     getAutoCompleteFieldName = () => 'username';
 
+    getGraphName: () => string = () => 'corpuser';
+
     getPathName: () => string = () => 'user';
 
-    getCollectionName: () => string = () => 'Users';
+    getEntityName = () => 'Person';
+
+    getCollectionName: () => string = () => 'People';
 
     renderProfile: (urn: string) => JSX.Element = (_) => <UserProfile />;
 
     renderPreview = (_: PreviewType, data: CorpUser) => (
         <Preview
             urn={data.urn}
-            name={data.info?.displayName || data.urn}
-            title={data.info?.title || ''}
+            name={this.displayName(data)}
+            title={data.editableProperties?.title || data.info?.title || ''}
             photoUrl={data.editableInfo?.pictureLink || undefined}
         />
     );
 
     renderSearch = (result: SearchResult) => {
         return this.renderPreview(PreviewType.SEARCH, result.entity as CorpUser);
+    };
+
+    displayName = (data: CorpUser) => {
+        return (
+            data.editableProperties?.displayName ||
+            data.properties?.displayName ||
+            data.properties?.fullName ||
+            data.info?.displayName || // Deprecated info field
+            data.info?.fullName || // Deprecated info field
+            data.username ||
+            data.urn
+        );
+    };
+
+    getGenericEntityProperties = (user: CorpUser) => {
+        return getDataForEntityType({ data: user, entityType: this.type, getOverrideProperties: (data) => data });
+    };
+
+    supportedCapabilities = () => {
+        return new Set([EntityCapabilityType.ROLES]);
     };
 }

@@ -1,6 +1,9 @@
+import unittest.mock
+
 import pytest
 
-from datahub.ingestion.source.oracle import OracleConfig
+from datahub.ingestion.api.common import PipelineContext
+from datahub.ingestion.source.sql.oracle import OracleConfig, OracleSource
 
 
 def test_oracle_config():
@@ -18,7 +21,7 @@ def test_oracle_config():
     )
     assert (
         config.get_sql_alchemy_url()
-        == "oracle+cx_oracle://user:password@host:1521/?service_name=svc01"
+        == "oracle://user:password@host:1521/?service_name=svc01"
     )
 
     with pytest.raises(ValueError):
@@ -29,3 +32,14 @@ def test_oracle_config():
                 "service_name": "svc01",
             }
         )
+
+    with unittest.mock.patch(
+        "datahub.ingestion.source.sql.sql_common.SQLAlchemySource.get_workunits"
+    ):
+        OracleSource.create(
+            {
+                **base_config,
+                "service_name": "svc01",
+            },
+            PipelineContext("test-oracle-config"),
+        ).get_workunits()

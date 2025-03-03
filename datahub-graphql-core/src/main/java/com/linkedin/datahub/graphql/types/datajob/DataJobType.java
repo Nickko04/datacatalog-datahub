@@ -1,207 +1,261 @@
 package com.linkedin.datahub.graphql.types.datajob;
 
-import com.google.common.collect.ImmutableSet;
+import static com.linkedin.datahub.graphql.Constants.*;
+import static com.linkedin.metadata.Constants.*;
 
+import com.datahub.authorization.ConjunctivePrivilegeGroup;
+import com.datahub.authorization.DisjunctivePrivilegeGroup;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.linkedin.common.urn.CorpuserUrn;
 import com.linkedin.common.urn.DataJobUrn;
 import com.linkedin.common.urn.Urn;
+import com.linkedin.common.urn.UrnUtils;
 import com.linkedin.data.template.StringArray;
 import com.linkedin.datahub.graphql.QueryContext;
+import com.linkedin.datahub.graphql.authorization.AuthorizationUtils;
+import com.linkedin.datahub.graphql.exception.AuthorizationException;
 import com.linkedin.datahub.graphql.generated.AutoCompleteResults;
 import com.linkedin.datahub.graphql.generated.BrowsePath;
 import com.linkedin.datahub.graphql.generated.BrowseResults;
 import com.linkedin.datahub.graphql.generated.DataJob;
+import com.linkedin.datahub.graphql.generated.DataJobUpdateInput;
+import com.linkedin.datahub.graphql.generated.Entity;
 import com.linkedin.datahub.graphql.generated.EntityType;
 import com.linkedin.datahub.graphql.generated.FacetFilterInput;
 import com.linkedin.datahub.graphql.generated.SearchResults;
 import com.linkedin.datahub.graphql.resolvers.ResolverUtils;
 import com.linkedin.datahub.graphql.types.BrowsableEntityType;
-import com.linkedin.datahub.graphql.types.SearchableEntityType;
-import com.linkedin.datahub.graphql.types.datajob.mappers.DataJobSnapshotMapper;
-import com.linkedin.datahub.graphql.types.mappers.AutoCompleteResultsMapper;
-import com.linkedin.datahub.graphql.generated.DataJobUpdateInput;
 import com.linkedin.datahub.graphql.types.MutableType;
+import com.linkedin.datahub.graphql.types.SearchableEntityType;
+import com.linkedin.datahub.graphql.types.datajob.mappers.DataJobMapper;
 import com.linkedin.datahub.graphql.types.datajob.mappers.DataJobUpdateInputMapper;
+import com.linkedin.datahub.graphql.types.mappers.AutoCompleteResultsMapper;
 import com.linkedin.datahub.graphql.types.mappers.BrowsePathsMapper;
-import com.linkedin.datahub.graphql.types.mappers.BrowseResultMetadataMapper;
+import com.linkedin.datahub.graphql.types.mappers.BrowseResultMapper;
 import com.linkedin.datahub.graphql.types.mappers.UrnSearchResultsMapper;
+import com.linkedin.entity.EntityResponse;
 import com.linkedin.entity.client.EntityClient;
-import com.linkedin.entity.Entity;
-import com.linkedin.metadata.aspect.DataJobAspect;
-import com.linkedin.metadata.dao.utils.ModelUtils;
-import com.linkedin.metadata.extractor.SnapshotToAspectMap;
+import com.linkedin.metadata.Constants;
+import com.linkedin.metadata.authorization.PoliciesConfig;
+import com.linkedin.metadata.browse.BrowseResult;
 import com.linkedin.metadata.query.AutoCompleteResult;
-import com.linkedin.metadata.query.BrowseResult;
-import com.linkedin.metadata.query.SearchResult;
-import com.linkedin.metadata.snapshot.DataJobSnapshot;
-import com.linkedin.metadata.snapshot.Snapshot;
+import com.linkedin.metadata.query.filter.Filter;
+import com.linkedin.metadata.search.SearchResult;
+import com.linkedin.mxe.MetadataChangeProposal;
+import com.linkedin.r2.RemoteInvocationException;
 import graphql.execution.DataFetcherResult;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import com.linkedin.r2.RemoteInvocationException;
+public class DataJobType
+    implements SearchableEntityType<DataJob, String>,
+        BrowsableEntityType<DataJob, String>,
+        MutableType<DataJobUpdateInput, DataJob> {
 
-import static com.linkedin.datahub.graphql.Constants.BROWSE_PATH_DELIMITER;
+  private static final Set<String> ASPECTS_TO_RESOLVE =
+      ImmutableSet.of(
+          DATA_JOB_KEY_ASPECT_NAME,
+          DATA_JOB_INFO_ASPECT_NAME,
+          DATA_JOB_INPUT_OUTPUT_ASPECT_NAME,
+          EDITABLE_DATA_JOB_PROPERTIES_ASPECT_NAME,
+          OWNERSHIP_ASPECT_NAME,
+          INSTITUTIONAL_MEMORY_ASPECT_NAME,
+          GLOBAL_TAGS_ASPECT_NAME,
+          GLOSSARY_TERMS_ASPECT_NAME,
+          STATUS_ASPECT_NAME,
+          DOMAINS_ASPECT_NAME,
+          DEPRECATION_ASPECT_NAME,
+          DATA_PLATFORM_INSTANCE_ASPECT_NAME,
+          CONTAINER_ASPECT_NAME,
+          DATA_PRODUCTS_ASPECT_NAME,
+          BROWSE_PATHS_V2_ASPECT_NAME,
+          SUB_TYPES_ASPECT_NAME,
+          STRUCTURED_PROPERTIES_ASPECT_NAME,
+          FORMS_ASPECT_NAME,
+          DATA_TRANSFORM_LOGIC_ASPECT_NAME);
+  private static final Set<String> FACET_FIELDS = ImmutableSet.of("flow");
+  private final EntityClient _entityClient;
 
+  public DataJobType(final EntityClient entityClient) {
+    _entityClient = entityClient;
+  }
 
-public class DataJobType implements SearchableEntityType<DataJob>, BrowsableEntityType<DataJob>, MutableType<DataJobUpdateInput> {
+  @Override
+  public EntityType type() {
+    return EntityType.DATA_JOB;
+  }
 
-    private static final Set<String> FACET_FIELDS = ImmutableSet.of("flow");
-    private final EntityClient _dataJobsClient;
+  @Override
+  public Function<Entity, String> getKeyProvider() {
+    return Entity::getUrn;
+  }
 
-    public DataJobType(final EntityClient dataJobsClient) {
-        _dataJobsClient = dataJobsClient;
+  @Override
+  public Class<DataJob> objectClass() {
+    return DataJob.class;
+  }
+
+  @Override
+  public Class<DataJobUpdateInput> inputClass() {
+    return DataJobUpdateInput.class;
+  }
+
+  @Override
+  public List<DataFetcherResult<DataJob>> batchLoad(
+      final List<String> urnStrs, @Nonnull final QueryContext context) throws Exception {
+    final List<Urn> urns = urnStrs.stream().map(UrnUtils::getUrn).collect(Collectors.toList());
+    try {
+
+      final Map<Urn, EntityResponse> dataJobMap =
+          _entityClient.batchGetV2(
+              context.getOperationContext(),
+              Constants.DATA_JOB_ENTITY_NAME,
+              new HashSet<>(urns),
+              ASPECTS_TO_RESOLVE);
+
+      final List<EntityResponse> gmsResults = new ArrayList<>(urnStrs.size());
+      for (Urn urn : urns) {
+        gmsResults.add(dataJobMap.getOrDefault(urn, null));
+      }
+      return gmsResults.stream()
+          .map(
+              gmsDataJob ->
+                  gmsDataJob == null
+                      ? null
+                      : DataFetcherResult.<DataJob>newResult()
+                          .data(DataJobMapper.map(context, gmsDataJob))
+                          .build())
+          .collect(Collectors.toList());
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to batch load Data Jobs", e);
     }
+  }
 
-    @Override
-    public EntityType type() {
-        return EntityType.DATA_JOB;
-    }
-
-    @Override
-    public Class<DataJob> objectClass() {
-        return DataJob.class;
-    }
-
-    @Override
-    public Class<DataJobUpdateInput> inputClass() {
-        return DataJobUpdateInput.class;
-    }
-
-    @Override
-    public List<DataFetcherResult<DataJob>> batchLoad(final List<String> urns, final QueryContext context) throws Exception {
-        final List<DataJobUrn> dataJobUrns = urns.stream()
-            .map(this::getDataJobUrn)
-            .collect(Collectors.toList());
-
-        try {
-            final Map<Urn, Entity> dataJobMap = _dataJobsClient.batchGet(dataJobUrns
-                .stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet()));
-
-            final List<Entity> gmsResults = dataJobUrns.stream()
-                .map(jobUrn -> dataJobMap.getOrDefault(jobUrn, null)).collect(Collectors.toList());
-
-            return gmsResults.stream()
-                .map(gmsDataJob -> gmsDataJob == null ? null
-                    : DataFetcherResult.<DataJob>newResult()
-                        .data(DataJobSnapshotMapper.map(gmsDataJob.getValue().getDataJobSnapshot()))
-                        .localContext(SnapshotToAspectMap.extractAspectMap(gmsDataJob.getValue().getDataJobSnapshot()))
-                        .build())
-                .collect(Collectors.toList());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to batch load DataJobs", e);
-        }
-    }
-
-    @Override
-    public SearchResults search(@Nonnull String query,
-                                @Nullable List<FacetFilterInput> filters,
-                                int start,
-                                int count,
-                                @Nonnull final QueryContext context) throws Exception {
-        final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
-        final SearchResult searchResult = _dataJobsClient.search(
-            "dataJob", query, facetFilters, start, count);
-        return UrnSearchResultsMapper.map(searchResult);
-    }
-
-    @Override
-    public AutoCompleteResults autoComplete(@Nonnull String query,
-                                            @Nullable String field,
-                                            @Nullable List<FacetFilterInput> filters,
-                                            int limit,
-                                            @Nonnull final QueryContext context) throws Exception {
-        final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
-        final AutoCompleteResult result = _dataJobsClient.autoComplete("dataJob", query, facetFilters, limit);
-        return AutoCompleteResultsMapper.map(result);
-    }
-
-    private DataJobUrn getDataJobUrn(String urnStr) {
-        try {
-            return DataJobUrn.createFromString(urnStr);
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(String.format("Failed to retrieve datajob with urn %s, invalid urn", urnStr));
-        }
-    }
-
-    @Override
-    public BrowseResults browse(@Nonnull List<String> path, @Nullable List<FacetFilterInput> filters, int start,
-        int count, @Nonnull QueryContext context) throws Exception {
-                final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
-        final String pathStr = path.size() > 0 ? BROWSE_PATH_DELIMITER + String.join(BROWSE_PATH_DELIMITER, path) : "";
-        final BrowseResult result = _dataJobsClient.browse(
+  @Override
+  public SearchResults search(
+      @Nonnull String query,
+      @Nullable List<FacetFilterInput> filters,
+      int start,
+      int count,
+      @Nonnull final QueryContext context)
+      throws Exception {
+    final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
+    final SearchResult searchResult =
+        _entityClient.search(
+            context.getOperationContext().withSearchFlags(flags -> flags.setFulltext(true)),
             "dataJob",
-                pathStr,
-                facetFilters,
-                start,
-                count);
-        final List<String> urns = result.getEntities().stream().map(entity -> entity.getUrn().toString()).collect(Collectors.toList());
-        final List<DataJob> dataJobs = batchLoad(urns, context).stream().map(dataFetcherResult -> dataFetcherResult.getData()).collect(
-            Collectors.toList());
-        final BrowseResults browseResults = new BrowseResults();
-        browseResults.setStart(result.getFrom());
-        browseResults.setCount(result.getPageSize());
-        browseResults.setTotal(result.getNumEntities());
-        browseResults.setMetadata(BrowseResultMetadataMapper.map(result.getMetadata()));
-        browseResults.setEntities(dataJobs.stream()
-                .map(dataset -> (com.linkedin.datahub.graphql.generated.Entity) dataset)
-                .collect(Collectors.toList()));
-        return browseResults;
+            query,
+            facetFilters,
+            start,
+            count);
+    return UrnSearchResultsMapper.map(context, searchResult);
+  }
+
+  @Override
+  public AutoCompleteResults autoComplete(
+      @Nonnull String query,
+      @Nullable String field,
+      @Nullable Filter filters,
+      int limit,
+      @Nonnull final QueryContext context)
+      throws Exception {
+    final AutoCompleteResult result =
+        _entityClient.autoComplete(context.getOperationContext(), "dataJob", query, filters, limit);
+    return AutoCompleteResultsMapper.map(context, result);
+  }
+
+  @Override
+  public BrowseResults browse(
+      @Nonnull List<String> path,
+      @Nullable List<FacetFilterInput> filters,
+      int start,
+      int count,
+      @Nonnull QueryContext context)
+      throws Exception {
+    final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
+    final String pathStr =
+        path.size() > 0 ? BROWSE_PATH_DELIMITER + String.join(BROWSE_PATH_DELIMITER, path) : "";
+    final BrowseResult result =
+        _entityClient.browse(
+            context.getOperationContext().withSearchFlags(flags -> flags.setFulltext(false)),
+            "dataJob",
+            pathStr,
+            facetFilters,
+            start,
+            count);
+    return BrowseResultMapper.map(context, result);
+  }
+
+  @Override
+  public List<BrowsePath> browsePaths(@Nonnull String urn, @Nonnull QueryContext context)
+      throws Exception {
+    final StringArray result =
+        _entityClient.getBrowsePaths(
+            context.getOperationContext(), DataJobUrn.createFromString(urn));
+    return BrowsePathsMapper.map(context, result);
+  }
+
+  @Override
+  public DataJob update(
+      @Nonnull String urn, @Nonnull DataJobUpdateInput input, @Nonnull QueryContext context)
+      throws Exception {
+    if (isAuthorized(urn, input, context)) {
+      final CorpuserUrn actor = CorpuserUrn.createFromString(context.getActorUrn());
+      final Collection<MetadataChangeProposal> proposals =
+          DataJobUpdateInputMapper.map(context, input, actor);
+      proposals.forEach(proposal -> proposal.setEntityUrn(UrnUtils.getUrn(urn)));
+
+      try {
+        _entityClient.batchIngestProposals(context.getOperationContext(), proposals, false);
+      } catch (RemoteInvocationException e) {
+        throw new RuntimeException(String.format("Failed to write entity with urn %s", urn), e);
+      }
+
+      return load(urn, context).getData();
     }
+    throw new AuthorizationException(
+        "Unauthorized to perform this action. Please contact your DataHub administrator.");
+  }
 
-    @Override
-    public List<BrowsePath> browsePaths(@Nonnull String urn, @Nonnull QueryContext context) throws Exception {
-        final StringArray result = _dataJobsClient.getBrowsePaths(DataJobUrn.createFromString(urn));
-        return BrowsePathsMapper.map(result);
+  private boolean isAuthorized(
+      @Nonnull String urn, @Nonnull DataJobUpdateInput update, @Nonnull QueryContext context) {
+    // Decide whether the current principal should be allowed to update the Dataset.
+    final DisjunctivePrivilegeGroup orPrivilegeGroups = getAuthorizedPrivileges(update);
+    return AuthorizationUtils.isAuthorized(
+        context, PoliciesConfig.DATA_JOB_PRIVILEGES.getResourceType(), urn, orPrivilegeGroups);
+  }
+
+  private DisjunctivePrivilegeGroup getAuthorizedPrivileges(final DataJobUpdateInput updateInput) {
+
+    final ConjunctivePrivilegeGroup allPrivilegesGroup =
+        new ConjunctivePrivilegeGroup(
+            ImmutableList.of(PoliciesConfig.EDIT_ENTITY_PRIVILEGE.getType()));
+
+    List<String> specificPrivileges = new ArrayList<>();
+    if (updateInput.getOwnership() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_OWNERS_PRIVILEGE.getType());
     }
-
-    @Nonnull
-    public static DataJobSnapshot toSnapshot(@Nonnull com.linkedin.datajob.DataJob dataJob, @Nonnull DataJobUrn urn) {
-        final List<DataJobAspect> aspects = new ArrayList<>();
-        if (dataJob.hasInfo()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getInfo()));
-        }
-        if (dataJob.hasInputOutput()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getInputOutput()));
-        }
-        if (dataJob.hasOwnership()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getOwnership()));
-        }
-        if (dataJob.hasStatus()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getStatus()));
-        }
-        if (dataJob.hasGlobalTags()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getGlobalTags()));
-        }
-        if (dataJob.hasEditableProperties()) {
-            aspects.add(ModelUtils.newAspectUnion(DataJobAspect.class, dataJob.getEditableProperties()));
-        }
-        return ModelUtils.newSnapshot(DataJobSnapshot.class, urn, aspects);
+    if (updateInput.getEditableProperties() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_DOCS_PRIVILEGE.getType());
     }
-
-    @Override
-    public DataJob update(@Nonnull DataJobUpdateInput input, @Nonnull QueryContext context) throws Exception {
-
-        final CorpuserUrn actor = CorpuserUrn.createFromString(context.getActor());
-        final com.linkedin.datajob.DataJob partialDataJob = DataJobUpdateInputMapper.map(input, actor);
-
-        try {
-            Entity entity = new Entity();
-            entity.setValue(Snapshot.create(toSnapshot(partialDataJob, DataJobUrn.createFromString(input.getUrn()))));
-            _dataJobsClient.update(entity);
-        } catch (RemoteInvocationException e) {
-            throw new RuntimeException(String.format("Failed to write entity with urn %s", input.getUrn()), e);
-        }
-
-        return load(input.getUrn(), context).getData();
+    if (updateInput.getGlobalTags() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_TAGS_PRIVILEGE.getType());
     }
+    final ConjunctivePrivilegeGroup specificPrivilegeGroup =
+        new ConjunctivePrivilegeGroup(specificPrivileges);
+
+    // If you either have all entity privileges, or have the specific privileges required, you are
+    // authorized.
+    return new DisjunctivePrivilegeGroup(
+        ImmutableList.of(allPrivilegesGroup, specificPrivilegeGroup));
+  }
 }

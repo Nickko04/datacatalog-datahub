@@ -1,6 +1,21 @@
-apply plugin: 'pegasus'
+plugins {
+  id 'pegasus'
+  id 'java-library'
+}
+
 
 dependencies {
-  compile spec.product.pegasus.data
+  implementation spec.product.pegasus.data
+  implementation externalDependency.commonsIo
+  dataModel project(':metadata-models')
   dataModel project(':li-utils')
 }
+
+idea {
+  module {
+    sourceDirs += file('src/main/javaPegasus')
+  }
+}
+
+sourceSets.mainGeneratedDataTemplate.java.srcDirs('src/main/javaPegasus/')
+spotlessJava.dependsOn generateTestDataTemplate

@@ -1,75 +1,93 @@
 import React, { useState } from 'react';
-import { FetchResult } from '@apollo/client';
-import { Button, Input, Modal, Space } from 'antd';
+import { message, Button, Input, Modal, Space } from 'antd';
 import styled from 'styled-components';
-
-import { UpdateDatasetMutation } from '../../../graphql/dataset.generated';
-import { useUpdateTagMutation } from '../../../graphql/tag.generated';
-import { GlobalTags, GlobalTagsUpdate, TagAssociationUpdate } from '../../../types.generated';
-import { convertTagsForUpdate } from './utils/convertTagsForUpdate';
+import { useBatchAddTagsMutation } from '../../../graphql/mutations.generated';
+import { useCreateTagMutation } from '../../../graphql/tag.generated';
+import { ResourceRefInput } from '../../../types.generated';
+import { useEnterKeyListener } from '../useEnterKeyListener';
+import { handleBatchError } from '../../entity/shared/utils';
 
 type CreateTagModalProps = {
-    globalTags?: GlobalTags | null;
-    updateTags?: (
-        update: GlobalTagsUpdate,
-    ) => Promise<FetchResult<UpdateDatasetMutation, Record<string, any>, Record<string, any>>>;
-    visible: boolean;
+    open: boolean;
     onClose: () => void;
     onBack: () => void;
     tagName: string;
+    resources: ResourceRefInput[];
 };
 
 const FullWidthSpace = styled(Space)`
     width: 100%;
 `;
 
-export default function CreateTagModal({
-    updateTags,
-    globalTags,
-    onClose,
-    onBack,
-    visible,
-    tagName,
-}: CreateTagModalProps) {
+export default function CreateTagModal({ onClose, onBack, open, tagName, resources }: CreateTagModalProps) {
     const [stagedDescription, setStagedDescription] = useState('');
+    const [batchAddTagsMutation] = useBatchAddTagsMutation();
 
-    const [updateTagMutation] = useUpdateTagMutation();
+    const [createTagMutation] = useCreateTagMutation();
     const [disableCreate, setDisableCreate] = useState(false);
 
     const onOk = () => {
         setDisableCreate(true);
         // first create the new tag
-        updateTagMutation({
+        const tagUrn = `urn:li:tag:${tagName}`;
+        createTagMutation({
             variables: {
                 input: {
-                    urn: `urn:li:tag:${tagName}`,
+                    id: tagName,
                     name: tagName,
                     description: stagedDescription,
                 },
             },
-        }).then(() => {
-            // then apply the tag to the dataset
-            updateTags?.({
-                tags: [
-                    ...convertTagsForUpdate(globalTags?.tags || []),
-                    { tag: { urn: `urn:li:tag:${tagName}`, name: tagName } },
-                ] as TagAssociationUpdate[],
-            }).finally(() => {
-                // and finally close the modal
-                setDisableCreate(false);
+        })
+            .then(() => {
+                // then apply the tag to the dataset
+                batchAddTagsMutation({
+                    variables: {
+                        input: {
+                            tagUrns: [tagUrn],
+                            resources,
+                        },
+                    },
+                })
+                    .catch((e) => {
+                        message.destroy();
+                        message.error(
+                            handleBatchError(resources, e, {
+                                content: `Failed to add tag: \n ${e.message || ''}`,
+                                duration: 3,
+                            }),
+                        );
+                        onClose();
+                    })
+                    .finally(() => {
+                        // and finally close the modal
+                        setDisableCreate(false);
+                        onClose();
+                    });
+            })
+            .catch((e) => {
+                message.destroy();
+                message.error({ content: `Failed to create tag: \n ${e.message || ''}`, duration: 3 });
                 onClose();
             });
-        });
     };
+
+    // Handle the Enter press
+    useEnterKeyListener({
+        querySelectorToExecuteClick: '#createTagButton',
+    });
 
     return (
         <Modal
             title={`Create ${tagName}`}
-            visible={visible}
+            open={open}
+            onCancel={onClose}
             footer={
                 <>
-                    <Button onClick={onBack}>Back</Button>
-                    <Button onClick={onOk} disabled={stagedDescription.length === 0 || disableCreate}>
+                    <Button onClick={onBack} type="text">
+                        Back
+                    </Button>
+                    <Button id="createTagButton" onClick={onOk} disabled={disableCreate}>
                         Create
                     </Button>
                 </>
@@ -77,7 +95,7 @@ export default function CreateTagModal({
         >
             <FullWidthSpace direction="vertical">
                 <Input.TextArea
-                    placeholder="Write a description for your new tag..."
+                    placeholder="Add a description for your new tag..."
                     value={stagedDescription}
                     onChange={(e) => setStagedDescription(e.target.value)}
                 />

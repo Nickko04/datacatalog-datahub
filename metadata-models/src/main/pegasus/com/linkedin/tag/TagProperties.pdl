@@ -7,14 +7,25 @@ namespace com.linkedin.tag
   "name": "tagProperties"
 }
 record TagProperties {
-
   /**
-   * Name of the tag
+   * Display name of the tag
    */
+  @Searchable = {
+    "fieldType": "WORD_GRAM",
+    "enableAutocomplete": true,
+    "boostScore": 10.0,
+    "fieldNameAliases": [ "_entityName" ]
+  }
   name: string
 
   /**
    * Documentation of the tag
    */
+  @Searchable = {}
   description: optional string
+
+  /**
+   * The color associated with the Tag in Hex. For example #FFFFFF.
+   */
+  colorHex: optional string
 }

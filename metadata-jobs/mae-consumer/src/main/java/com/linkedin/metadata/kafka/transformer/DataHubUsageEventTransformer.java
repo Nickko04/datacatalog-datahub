@@ -1,10 +1,14 @@
 package com.linkedin.metadata.kafka.transformer;
 
+import static com.linkedin.metadata.Constants.*;
+import static com.linkedin.metadata.datahubusage.DataHubUsageEventConstants.*;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Streams;
+import com.linkedin.metadata.datahubusage.DataHubUsageEventType;
 import com.linkedin.metadata.kafka.hydrator.EntityHydrator;
 import com.linkedin.metadata.kafka.hydrator.EntityType;
 import java.util.Optional;
@@ -13,23 +17,28 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import static com.linkedin.metadata.kafka.transformer.DataHubUsageEventConstants.ACTOR_URN;
-import static com.linkedin.metadata.kafka.transformer.DataHubUsageEventConstants.ENTITY_TYPE;
-import static com.linkedin.metadata.kafka.transformer.DataHubUsageEventConstants.ENTITY_URN;
-import static com.linkedin.metadata.kafka.transformer.DataHubUsageEventConstants.TIMESTAMP;
-import static com.linkedin.metadata.kafka.transformer.DataHubUsageEventConstants.TYPE;
-
-
-/**
- * Transformer that transforms usage event (schema defined HERE) into a search document
- */
+/** Transformer that transforms usage event (schema defined HERE) into a search document */
 @Slf4j
 @Component
 public class DataHubUsageEventTransformer {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+  static {
+    int maxSize =
+        Integer.parseInt(
+            System.getenv()
+                .getOrDefault(INGESTION_MAX_SERIALIZED_STRING_LENGTH, MAX_JACKSON_STRING_SIZE));
+    OBJECT_MAPPER
+        .getFactory()
+        .setStreamReadConstraints(StreamReadConstraints.builder().maxStringLength(maxSize).build());
+  }
+
   private static final Set<DataHubUsageEventType> EVENTS_WITH_ENTITY_URN =
-      ImmutableSet.of(DataHubUsageEventType.SEARCH_RESULT_CLICK_EVENT, DataHubUsageEventType.BROWSE_RESULT_CLICK_EVENT,
-          DataHubUsageEventType.ENTITY_VIEW_EVENT, DataHubUsageEventType.ENTITY_SECTION_VIEW_EVENT,
+      ImmutableSet.of(
+          DataHubUsageEventType.SEARCH_RESULT_CLICK_EVENT,
+          DataHubUsageEventType.BROWSE_RESULT_CLICK_EVENT,
+          DataHubUsageEventType.ENTITY_VIEW_EVENT,
+          DataHubUsageEventType.ENTITY_SECTION_VIEW_EVENT,
           DataHubUsageEventType.ENTITY_ACTION_EVENT);
 
   private final EntityHydrator _entityHydrator;
@@ -76,25 +85,25 @@ public class DataHubUsageEventTransformer {
 
     // Hydrate entity fields for events with entity URN
     if (EVENTS_WITH_ENTITY_URN.contains(eventType)) {
-      setFieldsForEntity(ENTITY_TYPE, ENTITY_URN, usageEvent, eventDocument);
+      setFieldsForEntity(usageEvent, eventDocument);
     }
 
     try {
       return Optional.of(
-          new TransformedDocument(getId(eventDocument), OBJECT_MAPPER.writeValueAsString(eventDocument)));
+          new TransformedDocument(
+              getId(eventDocument), OBJECT_MAPPER.writeValueAsString(eventDocument)));
     } catch (JsonProcessingException e) {
-      log.info("Failed to package document: {}", eventDocument.toString());
+      log.info("Failed to package document: {}", eventDocument);
       return Optional.empty();
     }
   }
 
-  private void setFieldsForEntity(String entityTypeKey, String urnKey, ObjectNode recordObject,
-      ObjectNode searchObject) {
-    if (!recordObject.has(entityTypeKey) || !recordObject.has(urnKey)) {
+  private void setFieldsForEntity(ObjectNode recordObject, ObjectNode searchObject) {
+    if (!recordObject.has(ENTITY_TYPE) || !recordObject.has(ENTITY_URN)) {
       return;
     }
 
-    String entityType = recordObject.get(entityTypeKey).asText();
+    String entityType = recordObject.get(ENTITY_TYPE).asText();
     EntityType type;
     try {
       type = EntityType.valueOf(entityType);
@@ -103,7 +112,7 @@ public class DataHubUsageEventTransformer {
       return;
     }
 
-    setFieldsForEntity(type, recordObject.get(urnKey).asText(), searchObject);
+    setFieldsForEntity(type, recordObject.get(ENTITY_URN).asText(), searchObject);
   }
 
   private void setFieldsForEntity(EntityType entityType, String urn, ObjectNode searchObject) {
@@ -112,13 +121,21 @@ public class DataHubUsageEventTransformer {
       log.info("No matches for urn {}", urn);
       return;
     }
-    Streams.stream(entityObject.get().fieldNames())
-        .forEach(
-            key -> searchObject.put(entityType.name().toLowerCase() + "_" + key, entityObject.get().get(key).asText()));
+    entityObject
+        .get()
+        .fieldNames()
+        .forEachRemaining(
+            key ->
+                searchObject.put(
+                    entityType.name().toLowerCase() + "_" + key,
+                    entityObject.get().get(key).asText()));
   }
 
   private String getId(final ObjectNode eventDocument) {
-    return eventDocument.get(TYPE).asText() + "_" + eventDocument.get(ACTOR_URN).asText() + "_" + eventDocument.get(
-        TIMESTAMP).asText();
+    return eventDocument.get(TYPE).asText()
+        + "_"
+        + eventDocument.get(ACTOR_URN).asText()
+        + "_"
+        + eventDocument.get(TIMESTAMP).asText();
   }
 }

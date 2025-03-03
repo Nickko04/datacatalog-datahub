@@ -1,13 +1,17 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 import requests
+from freezegun import freeze_time
 
 import datahub.metadata.schema_classes as models
+from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 
 MOCK_GMS_ENDPOINT = "http://fakegmshost:8080"
 
+FROZEN_TIME = 1618987484580
 basicAuditStamp = models.AuditStampClass(
     time=1618987484580,
     actor="urn:li:corpuser:datahub",
@@ -16,7 +20,7 @@ basicAuditStamp = models.AuditStampClass(
 
 
 @pytest.mark.parametrize(
-    "mce,snapshot",
+    "record,path,snapshot",
     [
         (
             # Simple test.
@@ -41,6 +45,7 @@ basicAuditStamp = models.AuditStampClass(
                     ],
                 ),
             ),
+            "/entities?action=ingest",
             {
                 "entity": {
                     "value": {
@@ -72,41 +77,16 @@ basicAuditStamp = models.AuditStampClass(
                             ],
                         }
                     }
-                }
-            },
-        ),
-        (
-            # Verify the behavior of the fieldDiscriminator for primitive enums.
-            models.MetadataChangeEventClass(
-                proposedSnapshot=models.MLModelSnapshotClass(
-                    urn="urn:li:mlModel:(urn:li:dataPlatform:science,scienceModel,PROD)",
-                    aspects=[
-                        models.CostClass(
-                            costType=models.CostTypeClass.ORG_COST_TYPE,
-                            cost=models.CostCostClass(
-                                fieldDiscriminator=models.CostCostDiscriminatorClass.costCode,
-                                costCode="sampleCostCode",
-                            ),
-                        )
-                    ],
-                )
-            ),
-            {
-                "entity": {
-                    "value": {
-                        "com.linkedin.metadata.snapshot.MLModelSnapshot": {
-                            "urn": "urn:li:mlModel:(urn:li:dataPlatform:science,scienceModel,PROD)",
-                            "aspects": [
-                                {
-                                    "com.linkedin.common.Cost": {
-                                        "costType": "ORG_COST_TYPE",
-                                        "cost": {"costCode": "sampleCostCode"},
-                                    }
-                                }
-                            ],
-                        }
-                    }
-                }
+                },
+                "systemMetadata": {
+                    "lastObserved": FROZEN_TIME,
+                    "lastRunId": "no-run-id-provided",
+                    "properties": {
+                        "clientId": "acryl-datahub",
+                        "clientVersion": "1!0.0.0.dev0",
+                    },
+                    "runId": "no-run-id-provided",
+                },
             },
         ),
         (
@@ -127,6 +107,7 @@ basicAuditStamp = models.AuditStampClass(
                     ],
                 )
             ),
+            "/entities?action=ingest",
             {
                 "entity": {
                     "value": {
@@ -154,7 +135,16 @@ basicAuditStamp = models.AuditStampClass(
                             ],
                         }
                     }
-                }
+                },
+                "systemMetadata": {
+                    "lastObserved": FROZEN_TIME,
+                    "lastRunId": "no-run-id-provided",
+                    "properties": {
+                        "clientId": "acryl-datahub",
+                        "clientVersion": "1!0.0.0.dev0",
+                    },
+                    "runId": "no-run-id-provided",
+                },
             },
         ),
         (
@@ -171,6 +161,7 @@ basicAuditStamp = models.AuditStampClass(
                     ],
                 )
             ),
+            "/entities?action=ingest",
             {
                 "entity": {
                     "value": {
@@ -182,32 +173,126 @@ basicAuditStamp = models.AuditStampClass(
                                         "customProperties": {},
                                         "name": "User Deletions",
                                         "description": "Constructs the fct_users_deleted from logging_events",
-                                        "type": {
-                                            "com.linkedin.datajob.azkaban.AzkabanJobType": "SQL"
-                                        },
+                                        "type": {"string": "SQL"},
                                     }
                                 }
                             ],
                         }
                     }
+                },
+                "systemMetadata": {
+                    "lastObserved": FROZEN_TIME,
+                    "lastRunId": "no-run-id-provided",
+                    "properties": {
+                        "clientId": "acryl-datahub",
+                        "clientVersion": "1!0.0.0.dev0",
+                    },
+                    "runId": "no-run-id-provided",
+                },
+            },
+        ),
+        (
+            # Usage stats ingestion test.
+            models.UsageAggregationClass(
+                bucket=1623826800000,
+                duration="DAY",
+                resource="urn:li:dataset:(urn:li:dataPlatform:kafka,SampleKafkaDataset,PROD)",
+                metrics=models.UsageAggregationMetricsClass(
+                    uniqueUserCount=2,
+                    users=[
+                        models.UserUsageCountsClass(
+                            user="urn:li:corpuser:jdoe",
+                            count=5,
+                        ),
+                        models.UserUsageCountsClass(
+                            user="urn:li:corpuser:unknown",
+                            count=3,
+                            userEmail="foo@example.com",
+                        ),
+                    ],
+                    totalSqlQueries=1,
+                    topSqlQueries=["SELECT * FROM foo"],
+                ),
+            ),
+            "/usageStats?action=batchIngest",
+            {
+                "buckets": [
+                    {
+                        "bucket": 1623826800000,
+                        "duration": "DAY",
+                        "resource": "urn:li:dataset:(urn:li:dataPlatform:kafka,SampleKafkaDataset,PROD)",
+                        "metrics": {
+                            "uniqueUserCount": 2,
+                            "users": [
+                                {"count": 5, "user": "urn:li:corpuser:jdoe"},
+                                {
+                                    "count": 3,
+                                    "user": "urn:li:corpuser:unknown",
+                                    "userEmail": "foo@example.com",
+                                },
+                            ],
+                            "totalSqlQueries": 1,
+                            "topSqlQueries": ["SELECT * FROM foo"],
+                        },
+                    }
+                ]
+            },
+        ),
+        (
+            MetadataChangeProposalWrapper(
+                entityUrn="urn:li:dataset:(urn:li:dataPlatform:foo,bar,PROD)",
+                aspect=models.OwnershipClass(
+                    owners=[
+                        models.OwnerClass(
+                            owner="urn:li:corpuser:fbar",
+                            type=models.OwnershipTypeClass.DATAOWNER,
+                        )
+                    ],
+                    lastModified=models.AuditStampClass(
+                        time=0,
+                        actor="urn:li:corpuser:fbar",
+                    ),
+                ),
+            ),
+            "/aspects?action=ingestProposal",
+            {
+                "proposal": {
+                    "entityType": "dataset",
+                    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:foo,bar,PROD)",
+                    "changeType": "UPSERT",
+                    "aspectName": "ownership",
+                    "aspect": {
+                        "value": '{"owners": [{"owner": "urn:li:corpuser:fbar", "type": "DATAOWNER"}], "ownerTypes": {}, "lastModified": {"time": 0, "actor": "urn:li:corpuser:fbar"}}',
+                        "contentType": "application/json",
+                    },
+                    "systemMetadata": {
+                        "lastObserved": FROZEN_TIME,
+                        "lastRunId": "no-run-id-provided",
+                        "properties": {
+                            "clientId": "acryl-datahub",
+                            "clientVersion": "1!0.0.0.dev0",
+                        },
+                        "runId": "no-run-id-provided",
+                    },
                 }
             },
         ),
     ],
 )
-def test_datahub_rest_emitter(requests_mock, mce, snapshot):
+@freeze_time(datetime.fromtimestamp(FROZEN_TIME / 1000, tz=timezone.utc))
+def test_datahub_rest_emitter(requests_mock, record, path, snapshot):
     def match_request_text(request: requests.Request) -> bool:
         requested_snapshot = request.json()
-        assert (
-            requested_snapshot == snapshot
-        ), f"Expected snapshot to be {json.dumps(snapshot)}, got {json.dumps(requested_snapshot)}"
+        assert requested_snapshot == snapshot, (
+            f"Expected snapshot to be {json.dumps(snapshot)}, got {json.dumps(requested_snapshot)}"
+        )
         return True
 
     requests_mock.post(
-        f"{MOCK_GMS_ENDPOINT}/entities?action=ingest",
+        f"{MOCK_GMS_ENDPOINT}{path}",
         request_headers={"X-RestLi-Protocol-Version": "2.0.0"},
         additional_matcher=match_request_text,
     )
 
     emitter = DatahubRestEmitter(MOCK_GMS_ENDPOINT)
-    emitter.emit_mce(mce)
+    emitter.emit(record)

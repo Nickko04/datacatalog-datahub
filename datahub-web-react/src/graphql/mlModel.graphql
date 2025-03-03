@@ -1,0 +1,57 @@
+query getMLModel($urn: String!) {
+    mlModel(urn: $urn) {
+        urn
+        type
+        ...nonRecursiveMLModel
+        features: relationships(input: { types: ["Consumes"], direction: OUTGOING, start: 0, count: 100 }) {
+            start
+            count
+            total
+            relationships {
+                type
+                direction
+                entity {
+                    ... on MLFeature {
+                        ...nonRecursiveMLFeature
+                    }
+                    ... on MLPrimaryKey {
+                        ...nonRecursiveMLPrimaryKey
+                    }
+                }
+            }
+        }
+        trainedBy: relationships(input: { types: ["TrainedBy"], direction: OUTGOING, start: 0, count: 100 }) {
+            start
+            count
+            total
+            relationships {
+                type
+                direction
+                entity {
+                    ... on DataProcessInstance {
+                        urn
+                        name
+                        type
+                        ...dataProcessInstanceFields
+                    }
+                }
+            }
+        }
+        privileges {
+            ...entityPrivileges
+        }
+        autoRenderAspects: aspects(input: { autoRenderOnly: true }) {
+            ...autoRenderAspectFields
+        }
+        structuredProperties {
+            properties {
+                ...structuredPropertiesFields
+            }
+        }
+        forms {
+            ...formsFields
+        }
+        ...notes
+        ...entityProfileVersionProperties
+    }
+}

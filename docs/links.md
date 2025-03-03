@@ -1,6 +1,24 @@
 # Articles & Talks
 
-## Articles
+## Overviews
+- [Tech Deep Dive: DataHub Metadata Service Authentication](https://blog.datahubproject.io/tech-deep-dive-introducing-datahub-metadata-service-authentication-661e3aabbad0) and [video](https://www.youtube.com/watch?v=DPY0G3Ix7Y8)
+- [Data in Context: Lineage Explorer in DataHub](https://blog.datahubproject.io/data-in-context-lineage-explorer-in-datahub-a53a9a476dc4)
+- [DataHub Basics — Users, Groups, & Authentication 101](https://www.youtube.com/watch?v=8Osw6p9vDYY)
+- [DataHub Basics: Lineage 101](https://www.youtube.com/watch?v=rONGpsndzRw)
+
+## Best Practices
+- [Tags and Terms: Two Powerful DataHub Features, Used in Two Different Scenarios](https://blog.datahubproject.io/tags-and-terms-two-powerful-datahub-features-used-in-two-different-scenarios-b5b4791e892e)
+
+## Case Studies
+- [Enabling Data Discovery in a Data Mesh: The Saxo Journey](https://blog.datahubproject.io/enabling-data-discovery-in-a-data-mesh-the-saxo-journey-451b06969c8f)
+- [DataHub @ Grofers Case Study](https://www.youtube.com/watch?v=m9kUYAuezFI)
+- [DataHub @ LinkedIn: Extending the OSS UI](https://www.youtube.com/watch?v=Rdt4kJqDoww)
+- [DataHub @ hipages Case Study: Oct 29 2021](https://www.youtube.com/watch?v=OFNzjUdMcJQ)
+- [DataHub @ Adevinta Case Study: Sept 24 2021 Community Town Hall](https://www.youtube.com/watch?v=u9DRa_5uPIM)
+- [DataHub at Bizzy (Case Study): Aug 27 2021 Community Meeting](https://www.youtube.com/watch?v=SuhLRr3QKt8)
+
+
+## Related Articles
 * [DataHub: A Generalized Metadata Search & Discovery Tool](https://engineering.linkedin.com/blog/2019/data-hub)
 * [Open sourcing DataHub: LinkedIn’s metadata search and discovery platform](https://engineering.linkedin.com/blog/2020/open-sourcing-datahub--linkedins-metadata-search-and-discovery-p)
 * [Data Catalogue — Knowing your data](https://medium.com/albert-franzi/data-catalogue-knowing-your-data-15f7d0724900)
@@ -8,7 +26,7 @@
 * [LinkIn Datahub Metadata Ingestion Scripts Unofficical Guide](https://medium.com/@liangjunjiang/linkin-datahub-etl-unofficical-guide-7c3949483f8b)
 * [Datahub - RPubs](https://rpubs.com/Priya_Shaji/dataHub)
 * [A Dive Into Metadata Hubs](https://www.holistics.io/blog/a-dive-into-metadata-hubs/)
-* [How LinkedIn, Uber, Lyft, Airbnb and Netflix are Solving Data Management and Discovery for Machine Learning Solutions](https://towardsdatascience.com/how-linkedin-uber-lyft-airbnb-and-netflix-are-solving-data-management-and-discovery-for-machine-9b79ee9184bb)
+* [How LinkedIn, Uber, Lyft, Airbnb and Netflix are Solving Data Management and Discovery for Machine Learning Solutions](https://www.kdnuggets.com/2019/08/linkedin-uber-lyft-airbnb-netflix-solving-data-management-discovery-machine-learning-solutions.html)
 * [Data Discovery in 2020](https://medium.com/@torokyle/data-discovery-in-2020-3c907383caa0)
 * [Work-Bench Snapshot: The Evolution of Data Discovery & Catalog](https://medium.com/work-bench/work-bench-snapshot-the-evolution-of-data-discovery-catalog-2f6c0425616b)
 * [In-house Data Discovery platforms](https://datastrategy.substack.com/p/in-house-data-discovery-platforms)
@@ -21,7 +39,7 @@
 * [Creating Notebook-based Dynamic Dashboards](https://towardsdatascience.com/creating-notebook-based-dynamic-dashboards-91f936adc6f3)
 
 ## Talks & Presentations
-* [DataHub: Powering LinkedIn's Metadata](demo/DataHub_-_Powering_LinkedIn_Metadata.pdf) @ [Budapest Data Forum 2020](https://budapestdata.hu/2020/en/)
+* [DataHub: Powering LinkedIn's Metadata](https://github.com/acryldata/static-assets-test/raw/master/imgs/demo/DataHub_-_Powering_LinkedIn_Metadata.pdf) @ [Budapest Data Forum 2020](https://budapestdata.hu/2020/en/)
 * [Taming the Data Beast Using DataHub](https://www.youtube.com/watch?v=bo4OhiPro7Y) @ [Data Engineering Melbourne Meetup November 2020](https://www.meetup.com/Data-Engineering-Melbourne/events/kgnvlrybcpbjc/)
 * [Metadata Management And Integration At LinkedIn With DataHub](https://www.dataengineeringpodcast.com/datahub-metadata-management-episode-147/) @ [Data Engineering Podcast](https://www.dataengineeringpodcast.com)
 * [The evolution of metadata: LinkedIn’s story](https://speakerdeck.com/shirshanka/the-evolution-of-metadata-linkedins-journey-strata-nyc-2019) @ [Strata Data Conference 2019](https://conferences.oreilly.com/strata/strata-ny-2019.html)

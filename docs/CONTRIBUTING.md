@@ -2,9 +2,15 @@
 
 We always welcome contributions to help make DataHub better. Take a moment to read this document if you would like to contribute.
 
-## Reporting issues
+## Provide Feedback
 
-We use GitHub issues to track bug reports, feature requests, and submitting pull requests.
+Have ideas about how to make DataHub better? Head over to [DataHub Feature Requests](https://feature-requests.datahubproject.io/) and tell us all about it!
+
+Show your support for other requests by upvoting; stay up to date on progess by subscribing for updates via email.
+
+## Reporting Issues
+
+We use GitHub issues to track bug reports and submitting pull requests.
 
 If you find a bug:
 
@@ -24,6 +30,7 @@ Before you submit your Pull Request (PR), consider the following guidelines:
 
 * Search GitHub for an open or closed PR that relates to your submission. You don't want to duplicate effort.
 * Follow the [standard GitHub approach](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork) to create the PR. Please also follow our [commit message format](#commit-message-format).
+* If there are any breaking changes, potential downtime, deprecations, or big feature please add an update in [Updating DataHub under Next](how/updating-datahub.md).
 * That's it! Thank you for your contribution!
 
 ## Commit Message Format

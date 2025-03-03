@@ -1,21 +1,22 @@
-apply plugin: 'java'
-apply plugin: 'pegasus'
+plugins {
+  id 'java-library'
+  id 'pegasus'
+}
 
 dependencies {
   dataModel project(path: ':li-utils', configuration: 'dataTemplate')
 }
 
-task copyGeneratedPdl(type: Copy, dependsOn: ':metadata-models-ext:build') {
-  from("../../metadata-models-ext/src/mainGeneratedPdl/pegasus/com/linkedin/mxe")
-  into file("src/main/pegasus/com/linkedin/mxe")
-}
-
-task copyMetadataModels(type: Copy, dependsOn: copyGeneratedPdl) {
+task copyMetadataModels(type: Copy) {
   from("../../metadata-models/src/main/pegasus/")
   into file("src/main/pegasus")
 }
 
 generateAvroSchema.dependsOn copyMetadataModels
+validateSchemaAnnotation.dependsOn copyMetadataModels
+mainTranslateSchemas.dependsOn copyMetadataModels
+generateDataTemplate.dependsOn copyMetadataModels
+mainCopySchemas.dependsOn copyMetadataModels
 pegasus.main.generationModes = [PegasusGenerationMode.PEGASUS, PegasusGenerationMode.AVRO]
 
 task copyOriginalAvsc(type: Copy, dependsOn: generateAvroSchema) {
@@ -24,7 +25,7 @@ task copyOriginalAvsc(type: Copy, dependsOn: generateAvroSchema) {
 }
 
 task renameNamespace(type: Exec, dependsOn: copyOriginalAvsc) {
-  commandLine 'sh', './rename-namespace.sh'
+  commandLine 'bash', './rename-namespace.sh'
 }
 
 build.dependsOn renameNamespace

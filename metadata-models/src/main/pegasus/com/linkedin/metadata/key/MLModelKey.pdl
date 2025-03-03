@@ -13,19 +13,16 @@ record MLModelKey {
   /**
   * Standardized platform urn for the model
   */
-  @Searchable = {
-    "fieldType": "URN",
-    "addToFilters": true
-  }
   platform: Urn
 
   /**
   * Name of the MLModel
   */
   @Searchable = {
-    "fieldType": "TEXT_PARTIAL",
+    "fieldType": "WORD_GRAM",
     "enableAutocomplete": true,
-    "boostScore": 10.0
+    "boostScore": 10.0,
+    "fieldNameAliases": [ "_entityName" ]
   }
   name: string
 
@@ -34,6 +31,8 @@ record MLModelKey {
   */
   @Searchable = {
     "fieldType": "TEXT_PARTIAL",
+    "addToFilters": true,
+    "filterNameOverride": "Environment",
     "queryByDefault": false
   }
   origin: FabricType

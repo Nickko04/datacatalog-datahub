@@ -1,45 +1,49 @@
-import contextlib
+import logging
+import os
 import subprocess
 
 import pytest
-import pytest_docker.plugin
+
+from datahub.testing.docker_utils import (
+    docker_compose_runner as docker_compose_runner,
+    is_responsive as is_responsive,
+    wait_for_port as wait_for_port,
+)
+
+logger = logging.getLogger(__name__)
 
 
-def is_responsive(container_name: str, port: int) -> bool:
-    ret = subprocess.run(
-        f"docker exec {container_name} /bin/bash -c 'echo -n > /dev/tcp/localhost/{port}'",
+@pytest.fixture(scope="session")
+def docker_compose_command():
+    """Docker Compose command to use, it could be either `docker-compose`
+    for Docker Compose v1 or `docker compose` for Docker Compose
+    v2."""
+
+    return "docker compose"
+
+
+def cleanup_image(image_name: str) -> None:
+    assert ":" not in image_name, "image_name should not contain a tag"
+
+    if not os.environ.get("CI"):
+        logger.debug("Not cleaning up images to speed up local development")
+        return
+
+    images_proc = subprocess.run(
+        f"docker image ls --filter 'reference={image_name}*' -q",
         shell=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    return ret.returncode == 0
 
+    if not images_proc.stdout:
+        logger.debug(f"No images to cleanup for {image_name}")
+        return
 
-def wait_for_port(
-    docker_services: pytest_docker.plugin.Services,
-    container_name: str,
-    container_port: int,
-    timeout: float = 30.0,
-) -> None:
-    try:
-        # port = docker_services.port_for(container_name, container_port)
-        docker_services.wait_until_responsive(
-            timeout=timeout,
-            pause=0.5,
-            check=lambda: is_responsive(container_name, container_port),
-        )
-    finally:
-        # use check=True to raise an error if command gave bad exit code
-        subprocess.run(f"docker logs {container_name}", shell=True, check=True)
-
-
-@pytest.fixture
-def docker_compose_runner(docker_compose_project_name, docker_cleanup):
-    @contextlib.contextmanager
-    def run(compose_file_path: str, key: str) -> pytest_docker.plugin.Services:
-        with pytest_docker.plugin.get_docker_services(
-            str(compose_file_path),
-            f"{docker_compose_project_name}-{key}",
-            docker_cleanup,
-        ) as docker_services:
-            yield docker_services
-
-    return run
+    image_ids = images_proc.stdout.splitlines()
+    subprocess.run(
+        f"docker image rm {' '.join(image_ids)}",
+        shell=True,
+        check=True,
+    )

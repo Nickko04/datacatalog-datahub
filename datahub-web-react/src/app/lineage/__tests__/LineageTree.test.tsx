@@ -1,10 +1,15 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import { hierarchy } from '@vx/hierarchy';
-import { Zoom } from '@vx/zoom';
-
-import { dataset3WithLineage, dataset4WithLineage, dataset5WithLineage, dataset6WithLineage } from '../../../Mocks';
-import { Direction, FetchedEntities } from '../types';
+import { Zoom } from '@visx/zoom';
+import { MockedProvider } from '@apollo/client/testing';
+import {
+    dataset3WithLineage,
+    dataset4WithLineage,
+    dataset5WithLineage,
+    dataset6WithLineage,
+    mocks,
+} from '../../../Mocks';
+import { Direction, EntityAndType } from '../types';
 import constructTree from '../utils/constructTree';
 import LineageTree from '../LineageTree';
 import extendAsyncEntities from '../utils/extendAsyncEntities';
@@ -17,7 +22,6 @@ const [windowWidth, windowHeight] = [1000, 500];
 const height = windowHeight - 125;
 const width = windowWidth;
 const yMax = height - margin.top - margin.bottom;
-const xMax = (width - margin.left - margin.right) / 2;
 const initialTransform = {
     scaleX: 2 / 3,
     scaleY: 2 / 3,
@@ -39,50 +43,66 @@ describe('LineageTree', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity, type: EntityType.Dataset } as EntityAndType,
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
-        const downstreamData = hierarchy(
-            constructTree(
-                { entity: dataset3WithLineage, type: EntityType.Dataset },
-                mockFetchedEntities,
-                Direction.Upstream,
-                testEntityRegistry,
-            ),
+        const downstreamData = constructTree(
+            { entity: dataset3WithLineage, type: EntityType.Dataset },
+            mockFetchedEntities,
+            Direction.Downstream,
+            testEntityRegistry,
+            {},
+        );
+        const upstreamData = constructTree(
+            { entity: dataset3WithLineage, type: EntityType.Dataset },
+            mockFetchedEntities,
+            Direction.Upstream,
+            testEntityRegistry,
+            {},
         );
 
         const { getByTestId } = render(
-            <TestPageContainer>
-                <Zoom
-                    width={width}
-                    height={height}
-                    scaleXMin={1 / 8}
-                    scaleXMax={2}
-                    scaleYMin={1 / 8}
-                    scaleYMax={2}
-                    transformMatrix={initialTransform}
-                >
-                    {(zoom) => (
-                        <svg>
-                            <LineageTree
-                                data={downstreamData}
-                                zoom={zoom}
-                                onEntityClick={jest.fn()}
-                                onLineageExpand={jest.fn()}
-                                canvasHeight={yMax}
-                                canvasWidth={xMax}
-                                margin={margin}
-                                direction={Direction.Upstream}
-                            />
-                        </svg>
-                    )}
-                </Zoom>
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks}>
+                <TestPageContainer>
+                    <Zoom
+                        width={width}
+                        height={height}
+                        scaleXMin={1 / 8}
+                        scaleXMax={2}
+                        scaleYMin={1 / 8}
+                        scaleYMax={2}
+                        initialTransformMatrix={initialTransform}
+                    >
+                        {(zoom) => (
+                            <svg>
+                                <LineageTree
+                                    upstreamData={upstreamData}
+                                    downstreamData={downstreamData}
+                                    zoom={zoom}
+                                    onEntityClick={vi.fn()}
+                                    onLineageExpand={vi.fn()}
+                                    canvasHeight={yMax}
+                                    margin={margin}
+                                    setIsDraggingNode={vi.fn()}
+                                    draggedNodes={{}}
+                                    setDraggedNodes={vi.fn()}
+                                    onEntityCenter={vi.fn()}
+                                    setHoveredEntity={vi.fn()}
+                                    fetchedEntities={mockFetchedEntities}
+                                    setUpdatedLineages={vi.fn()}
+                                />
+                            </svg>
+                        )}
+                    </Zoom>
+                </TestPageContainer>
+            </MockedProvider>,
         );
 
         expect(getByTestId('edge-urn:li:dataset:6-urn:li:dataset:5-Upstream')).toBeInTheDocument();

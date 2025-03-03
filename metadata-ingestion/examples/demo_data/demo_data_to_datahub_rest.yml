@@ -1,9 +1,0 @@
-source:
-  type: "file"
-  config:
-    filename: "./examples/demo_data/demo_data.json"
-
-sink:
-  type: "datahub-rest"
-  config:
-    server: 'http://localhost:8080'

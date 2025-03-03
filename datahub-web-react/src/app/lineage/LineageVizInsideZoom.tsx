@@ -1,19 +1,30 @@
-import React, { SVGProps, useEffect, useMemo } from 'react';
-import { hierarchy } from '@vx/hierarchy';
+import React, { useEffect, useState } from 'react';
 import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
-import styled from 'styled-components';
-import { Button, Card } from 'antd';
-import { ProvidedZoom, TransformMatrix } from '@vx/zoom/lib/types';
+import styled from 'styled-components/macro';
+import { Button } from 'antd';
+import { ProvidedZoom, TransformMatrix } from '@visx/zoom/lib/types';
 
-import LineageTree from './LineageTree';
-import constructTree from './utils/constructTree';
-import { Direction, EntityAndType, EntitySelectParams, FetchedEntity } from './types';
-import { useEntityRegistry } from '../useEntityRegistry';
+import { ColumnEdge, EntityAndType, EntitySelectParams, FetchedEntity } from './types';
+import { LineageExplorerContext } from './utils/LineageExplorerContext';
+import { SchemaField, SchemaFieldRef } from '../../types.generated';
+import { useIsShowColumnsMode } from './utils/useIsShowColumnsMode';
+import { LineageVizControls } from './controls/LineageVizControls';
+import LineageVizRootSvg from './LineageVizRootSvg';
 
-const ZoomCard = styled(Card)`
+const ControlsDiv = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 60px;
+`;
+
+const ZoomContainer = styled.div`
+    position: relative;
+`;
+
+const ZoomControls = styled.div`
     position: absolute;
-    box-shadow: 4px 4px 4px -1px grey;
-    top: 145px;
+    top: 20px;
     right: 20px;
 `;
 
@@ -22,24 +33,22 @@ const ZoomButton = styled(Button)`
     margin-bottom: 12px;
 `;
 
-const RootSvg = styled.svg<{ isDragging: boolean } & SVGProps<SVGSVGElement>>`
-    cursor: ${(props) => (props.isDragging ? 'grabbing' : 'grab')};
-`;
-
 type Props = {
     margin: { top: number; right: number; bottom: number; left: number };
     entityAndType?: EntityAndType | null;
-    fetchedEntities: { [x: string]: FetchedEntity };
+    fetchedEntities: Map<string, FetchedEntity>;
     onEntityClick: (EntitySelectParams) => void;
     onEntityCenter: (EntitySelectParams) => void;
-    onLineageExpand: (LineageExpandParams) => void;
+    onLineageExpand: (data: EntityAndType) => void;
     selectedEntity?: EntitySelectParams;
-    zoom: ProvidedZoom & {
+    zoom: ProvidedZoom<any> & {
         transformMatrix: TransformMatrix;
         isDragging: boolean;
     };
     width: number;
     height: number;
+    fineGrainedMap?: any;
+    refetchCenterNode: () => void;
 };
 
 export default function LineageVizInsideZoom({
@@ -53,114 +62,71 @@ export default function LineageVizInsideZoom({
     selectedEntity,
     width,
     height,
+    fineGrainedMap,
+    refetchCenterNode,
 }: Props) {
-    const entityRegistry = useEntityRegistry();
-    const yMax = height - margin?.top - margin?.bottom;
-    const xMax = (width - margin?.left - margin?.right) / 2;
-
-    const downstreamData = useMemo(
-        () => hierarchy(constructTree(entityAndType, fetchedEntities, Direction.Downstream, entityRegistry)),
-        [entityAndType, fetchedEntities, entityRegistry],
-    );
-    const upstreamData = useMemo(
-        () => hierarchy(constructTree(entityAndType, fetchedEntities, Direction.Upstream, entityRegistry)),
-        [entityAndType, fetchedEntities, entityRegistry],
-    );
+    const [collapsedColumnsNodes, setCollapsedColumnsNodes] = useState<Record<string, boolean>>({});
+    const [selectedField, setSelectedField] = useState<SchemaFieldRef | null>(null);
+    const [highlightedEdges, setHighlightedEdges] = useState<ColumnEdge[]>([]);
+    const [visibleColumnsByUrn, setVisibleColumnsByUrn] = useState<Record<string, Set<string>>>({});
+    const [columnsByUrn, setColumnsByUrn] = useState<Record<string, SchemaField[]>>({});
+    const [showExpandedTitles, setShowExpandedTitles] = useState(false);
+    const showColumns = useIsShowColumnsMode();
 
     useEffect(() => {
         zoom.setTransformMatrix({ ...zoom.transformMatrix, translateY: 0, translateX: width / 2 });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entityAndType?.entity?.urn]);
+
     return (
         <>
-            <ZoomCard size="small">
-                <ZoomButton onClick={() => zoom.scale({ scaleX: 1.2, scaleY: 1.2 })}>
-                    <PlusOutlined />
-                </ZoomButton>
-                <Button onClick={() => zoom.scale({ scaleX: 0.8, scaleY: 0.8 })}>
-                    <MinusOutlined />
-                </Button>
-            </ZoomCard>
-            <RootSvg
-                width={width}
-                height={height}
-                onMouseDown={zoom.dragStart}
-                onMouseUp={zoom.dragEnd}
-                onMouseMove={zoom.dragMove}
-                onTouchStart={zoom.dragStart}
-                onTouchMove={zoom.dragMove}
-                onTouchEnd={zoom.dragEnd}
-                isDragging={zoom.isDragging}
+            <LineageExplorerContext.Provider
+                value={{
+                    expandTitles: showExpandedTitles,
+                    showColumns,
+                    collapsedColumnsNodes,
+                    setCollapsedColumnsNodes,
+                    fineGrainedMap,
+                    selectedField,
+                    setSelectedField,
+                    highlightedEdges,
+                    setHighlightedEdges,
+                    visibleColumnsByUrn,
+                    setVisibleColumnsByUrn,
+                    columnsByUrn,
+                    setColumnsByUrn,
+                    refetchCenterNode,
+                }}
             >
-                <defs>
-                    <marker
-                        id="triangle-downstream"
-                        viewBox="0 0 10 10"
-                        refX="10"
-                        refY="5"
-                        markerUnits="strokeWidth"
-                        markerWidth="10"
-                        markerHeight="10"
-                        orient="auto"
-                    >
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#000" />
-                    </marker>
-                    <marker
-                        id="triangle-upstream"
-                        viewBox="0 0 10 10"
-                        refX="0"
-                        refY="5"
-                        markerUnits="strokeWidth"
-                        markerWidth="10"
-                        markerHeight="10"
-                        orient="auto"
-                    >
-                        <path d="M 0 5 L 10 10 L 10 0 L 0 5 z" fill="#000" />
-                    </marker>
-                    <linearGradient id="gradient-Downstream" x1="1" x2="0" y1="0" y2="0">
-                        <stop offset="0%" stopColor="black" />
-                        <stop offset="100%" stopColor="black" stopOpacity="0" />
-                    </linearGradient>
-                    <linearGradient id="gradient-Upstream" x1="0" x2="1" y1="0" y2="0">
-                        <stop offset="0%" stopColor="black" />
-                        <stop offset="100%" stopColor="black" stopOpacity="0" />
-                    </linearGradient>
-                    <filter id="shadow1">
-                        <feDropShadow
-                            dx="1"
-                            dy="3"
-                            stdDeviation="4"
-                            floodColor="rgba(72, 106, 108, 0.25)"
-                            floodOpacity="1"
-                        />
-                    </filter>
-                </defs>
-                <rect width={width} height={height} fill="#f6f8fa" />
-                <LineageTree
-                    data={upstreamData}
-                    zoom={zoom}
-                    onEntityClick={onEntityClick}
-                    onEntityCenter={onEntityCenter}
-                    onLineageExpand={onLineageExpand}
-                    canvasHeight={yMax}
-                    canvasWidth={xMax}
-                    margin={margin}
-                    selectedEntity={selectedEntity}
-                    direction={Direction.Upstream}
-                />
-                <LineageTree
-                    data={downstreamData}
-                    zoom={zoom}
-                    onEntityClick={onEntityClick}
-                    onEntityCenter={onEntityCenter}
-                    onLineageExpand={onLineageExpand}
-                    canvasHeight={yMax}
-                    canvasWidth={xMax}
-                    margin={margin}
-                    selectedEntity={selectedEntity}
-                    direction={Direction.Downstream}
-                />
-            </RootSvg>
+                <ControlsDiv>
+                    <LineageVizControls
+                        showExpandedTitles={showExpandedTitles}
+                        setShowExpandedTitles={setShowExpandedTitles}
+                    />
+                </ControlsDiv>
+                <ZoomContainer>
+                    <ZoomControls>
+                        <ZoomButton onClick={() => zoom.scale({ scaleX: 1.2, scaleY: 1.2 })}>
+                            <PlusOutlined />
+                        </ZoomButton>
+                        <Button onClick={() => zoom.scale({ scaleX: 0.8, scaleY: 0.8 })}>
+                            <MinusOutlined />
+                        </Button>
+                    </ZoomControls>
+                    <LineageVizRootSvg
+                        entityAndType={entityAndType}
+                        width={width}
+                        height={height}
+                        margin={margin}
+                        onEntityClick={onEntityClick}
+                        onEntityCenter={onEntityCenter}
+                        onLineageExpand={onLineageExpand}
+                        selectedEntity={selectedEntity}
+                        zoom={zoom}
+                        fetchedEntities={fetchedEntities}
+                    />
+                </ZoomContainer>
+            </LineageExplorerContext.Provider>
         </>
     );
 }

@@ -5,8 +5,10 @@ import com.linkedin.common.ChangeAuditStamps
 import com.linkedin.common.ChartUrn
 import com.linkedin.common.Time
 import com.linkedin.common.Url
+import com.linkedin.common.Urn
 import com.linkedin.common.CustomProperties
 import com.linkedin.common.ExternalReference
+import com.linkedin.common.Edge
 
 /**
  * Information about a dashboard
@@ -20,9 +22,10 @@ record DashboardInfo includes CustomProperties, ExternalReference {
    * Title of the dashboard
    */
   @Searchable = {
-    "fieldType": "TEXT_PARTIAL",
+    "fieldType": "WORD_GRAM",
     "enableAutocomplete": true,
-    "boostScore": 10.0
+    "boostScore": 10.0,
+    "fieldNameAliases": [ "_entityName" ]
   }
   title: string
 
@@ -37,14 +40,85 @@ record DashboardInfo includes CustomProperties, ExternalReference {
 
   /**
    * Charts in a dashboard
+   * Deprecated! Use chartEdges instead.
    */
   @Relationship = {
     "/*": {
       "name": "Contains",
-      "entityTypes": [ "chart" ]
+      "entityTypes": [ "chart" ],
+      "isLineage": true
     }
   }
+  @deprecated
   charts: array[ChartUrn] = [ ]
+
+  /**
+   * Charts in a dashboard
+   */
+  @Relationship = {
+    "/*/destinationUrn": {
+      "name": "Contains",
+      "entityTypes": [ "chart" ],
+      "isLineage": true,
+      "createdOn": "chartEdges/*/created/time"
+      "createdActor": "chartEdges/*/created/actor"
+      "updatedOn": "chartEdges/*/lastModified/time"
+      "updatedActor": "chartEdges/*/lastModified/actor"
+      "properties": "chartEdges/*/properties"
+    }
+  }
+  chartEdges: optional array[Edge]
+
+  /**
+   * Datasets consumed by a dashboard
+   * Deprecated! Use datasetEdges instead.
+   */
+  @Relationship = {
+    "/*": {
+      "name": "Consumes",
+      "entityTypes": [ "dataset" ],
+      "isLineage": true
+    }
+  }
+  @deprecated
+  datasets: array[Urn] = [ ]
+
+  /**
+   * Datasets consumed by a dashboard
+   */
+  @Relationship = {
+    "/*/destinationUrn": {
+      "name": "Consumes",
+      "entityTypes": [ "dataset" ],
+      "isLineage": true,
+      "createdOn": "datasetEdges/*/created/time"
+      "createdActor": "datasetEdges/*/created/actor"
+      "updatedOn": "datasetEdges/*/lastModified/time"
+      "updatedActor": "datasetEdges/*/lastModified/actor"
+      "properties": "datasetEdges/*/properties"
+    }
+  }
+  datasetEdges: optional array[Edge]
+
+  /**
+   * Dashboards included by this dashboard.
+   * Some dashboard entities (e.g. PowerBI Apps) can contain other dashboards.
+   *
+   * The Edge's sourceUrn should never be set, as it will always be the base dashboard.
+   */
+  @Relationship = {
+    "/*/destinationUrn": {
+      "name": "DashboardContainsDashboard",
+      "entityTypes": [ "dashboard" ],
+      "isLineage": true,
+      "createdOn": "dashboards/*/created/time"
+      "createdActor": "dashboards/*/created/actor"
+      "updatedOn": "dashboards/*/lastModified/time"
+      "updatedActor": "dashboards/*/lastModified/actor"
+      "properties": "dashboards/*/properties"
+    }
+  }
+  dashboards: array[Edge] = [ ]
 
   /**
    * Captures information about who created/last modified/deleted this dashboard and when
@@ -54,6 +128,9 @@ record DashboardInfo includes CustomProperties, ExternalReference {
   /**
    * URL for the dashboard. This could be used as an external link on DataHub to allow users access/view the dashboard
    */
+  @Searchable = {
+    "fieldType": "KEYWORD"
+  }
   dashboardUrl: optional Url
 
   /**
@@ -61,7 +138,8 @@ record DashboardInfo includes CustomProperties, ExternalReference {
    */
   @Searchable = {
     "fieldType": "KEYWORD",
-    "addToFilters": true
+    "addToFilters": true,
+    "filterNameOverride": "Access Level"
   }
   access: optional AccessLevel
 

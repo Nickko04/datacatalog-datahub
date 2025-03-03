@@ -1,8 +1,11 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react';
+import { MockedProvider } from '@apollo/client/testing';
+
 import TagTermGroup from '../TagTermGroup';
 import TestPageContainer from '../../../../utils/test-utils/TestPageContainer';
-import { EntityType, GlossaryTerms } from '../../../../types.generated';
+import { EntityType, GlobalTags, GlossaryTerms } from '../../../../types.generated';
+import { mocks } from '../../../../Mocks';
 
 const legacyTag = {
     urn: 'urn:li:tag:legacy',
@@ -45,9 +48,11 @@ const glossaryTerms = {
 describe('TagTermGroup', () => {
     it('renders editable tags', async () => {
         const { getByText, getByLabelText, queryAllByLabelText, queryByText } = render(
-            <TestPageContainer>
-                <TagTermGroup editableTags={globalTags1} canRemove />
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup editableTags={globalTags1 as GlobalTags} canRemove />
+                </TestPageContainer>
+            </MockedProvider>,
         );
         expect(queryByText('Add Tag')).not.toBeInTheDocument();
         expect(getByText('Legacy')).toBeInTheDocument();
@@ -65,9 +70,11 @@ describe('TagTermGroup', () => {
 
     it('renders uneditable tags', () => {
         const { getByText, queryByLabelText, queryByText } = render(
-            <TestPageContainer>
-                <TagTermGroup uneditableTags={globalTags2} />
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup uneditableTags={globalTags2 as GlobalTags} />
+                </TestPageContainer>
+            </MockedProvider>,
         );
         expect(queryByText('Add Tag')).not.toBeInTheDocument();
         expect(getByText('NeedsOwnership')).toBeInTheDocument();
@@ -76,9 +83,15 @@ describe('TagTermGroup', () => {
 
     it('renders both together', () => {
         const { getByText, queryByText, queryAllByLabelText } = render(
-            <TestPageContainer>
-                <TagTermGroup uneditableTags={globalTags1} editableTags={globalTags2} canRemove />
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup
+                        uneditableTags={globalTags1 as GlobalTags}
+                        editableTags={globalTags2 as GlobalTags}
+                        canRemove
+                    />
+                </TestPageContainer>
+            </MockedProvider>,
         );
         expect(queryByText('Add Tag')).not.toBeInTheDocument();
         expect(getByText('Legacy')).toBeInTheDocument();
@@ -88,22 +101,59 @@ describe('TagTermGroup', () => {
 
     it('renders create tag', () => {
         const { getByText, queryByText } = render(
-            <TestPageContainer>
-                <TagTermGroup uneditableTags={globalTags1} editableTags={globalTags2} canRemove canAdd />
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup
+                        entityUrn="urn:li:chart:123"
+                        entityType={EntityType.Chart}
+                        uneditableTags={globalTags1 as GlobalTags}
+                        editableTags={globalTags2 as GlobalTags}
+                        canRemove
+                        canAddTag
+                    />
+                </TestPageContainer>
+            </MockedProvider>,
         );
-        expect(queryByText('+ Add Tag')).toBeInTheDocument();
-        expect(queryByText('Find a tag')).not.toBeInTheDocument();
-        const AddTagButton = getByText('+ Add Tag');
+        expect(queryByText('Add Tags')).toBeInTheDocument();
+        expect(queryByText('Search for tag...')).not.toBeInTheDocument();
+        const AddTagButton = getByText('Add Tags');
         fireEvent.click(AddTagButton);
-        expect(queryByText('Find a tag')).toBeInTheDocument();
+        expect(queryByText('Search for tag...')).toBeInTheDocument();
+    });
+
+    it('renders create term', () => {
+        const { getByText, queryByText } = render(
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup
+                        entityUrn="urn:li:chart:123"
+                        entityType={EntityType.Chart}
+                        uneditableTags={globalTags1 as GlobalTags}
+                        editableTags={globalTags2 as GlobalTags}
+                        canRemove
+                        canAddTerm
+                    />
+                </TestPageContainer>
+            </MockedProvider>,
+        );
+        expect(queryByText('Add Terms')).toBeInTheDocument();
+        expect(queryByText('Search for glossary term...')).not.toBeInTheDocument();
+        const AddTagButton = getByText('Add Terms');
+        fireEvent.click(AddTagButton);
+        expect(queryByText('Search for glossary term...')).toBeInTheDocument();
     });
 
     it('renders terms', () => {
         const { getByText, queryAllByLabelText } = render(
-            <TestPageContainer>
-                <TagTermGroup glossaryTerms={glossaryTerms as GlossaryTerms} />
-            </TestPageContainer>,
+            <MockedProvider mocks={mocks} addTypename={false}>
+                <TestPageContainer>
+                    <TagTermGroup
+                        entityUrn="urn:li:chart:123"
+                        entityType={EntityType.Chart}
+                        uneditableGlossaryTerms={glossaryTerms as GlossaryTerms}
+                    />
+                </TestPageContainer>
+            </MockedProvider>,
         );
         expect(getByText('InstrumentIdentifier')).toBeInTheDocument();
         expect(getByText('InstrumentCost')).toBeInTheDocument();

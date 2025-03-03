@@ -1,29 +1,37 @@
 query getDashboard($urn: String!) {
     dashboard(urn: $urn) {
+        urn
+        type
         ...dashboardFields
-        editableProperties {
-            description
+        privileges {
+            ...entityPrivileges
         }
-        downstreamLineage {
-            ...downstreamRelationshipFields
+        charts: relationships(input: { types: ["Contains"], direction: OUTGOING, start: 0, count: 100 }) {
+            ...fullRelationshipResults
         }
-        upstreamLineage {
-            ...upstreamRelationshipFields
+        datasets: relationships(input: { types: ["Consumes"], direction: OUTGOING, start: 0, count: 100 }) {
+            ...fullRelationshipResults
         }
+        autoRenderAspects: aspects(input: { autoRenderOnly: true }) {
+            ...autoRenderAspectFields
+        }
+        structuredProperties {
+            properties {
+                ...structuredPropertiesFields
+            }
+        }
+        activeIncidents: incidents(start: 0, count: 1, state: ACTIVE) {
+            total
+        }
+        forms {
+            ...formsFields
+        }
+        ...notes
     }
 }
 
-mutation updateDashboard($input: DashboardUpdateInput!) {
-    updateDashboard(input: $input) {
-        ...dashboardFields
-        editableProperties {
-            description
-        }
-        downstreamLineage {
-            ...downstreamRelationshipFields
-        }
-        upstreamLineage {
-            ...upstreamRelationshipFields
-        }
+mutation updateDashboard($urn: String!, $input: DashboardUpdateInput!) {
+    updateDashboard(urn: $urn, input: $input) {
+        urn
     }
 }

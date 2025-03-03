@@ -1,12 +1,35 @@
 import { LineChartOutlined } from '@ant-design/icons';
 import * as React from 'react';
-import { Chart, EntityType, SearchResult } from '../../../types.generated';
-import { Direction } from '../../lineage/types';
-import getChildren from '../../lineage/utils/getChildren';
-import { Entity, IconStyleType, PreviewType } from '../Entity';
-import { getLogoFromPlatform } from '../../shared/getLogoFromPlatform';
+
+import { Chart, EntityType, LineageDirection, SearchResult } from '../../../types.generated';
+import { Entity, EntityCapabilityType, IconStyleType, PreviewType } from '../Entity';
 import { ChartPreview } from './preview/ChartPreview';
-import ChartProfile from './profile/ChartProfile';
+import { GetChartQuery, useGetChartQuery, useUpdateChartMutation } from '../../../graphql/chart.generated';
+import { DocumentationTab } from '../shared/tabs/Documentation/DocumentationTab';
+import { SidebarAboutSection } from '../shared/containers/profile/sidebar/AboutSection/SidebarAboutSection';
+import { SidebarTagsSection } from '../shared/containers/profile/sidebar/SidebarTagsSection';
+import { SidebarOwnerSection } from '../shared/containers/profile/sidebar/Ownership/sidebar/SidebarOwnerSection';
+import { GenericEntityProperties } from '../shared/types';
+import { EntityProfile } from '../shared/containers/profile/EntityProfile';
+import { PropertiesTab } from '../shared/tabs/Properties/PropertiesTab';
+import { ChartDashboardsTab } from '../shared/tabs/Entity/ChartDashboardsTab';
+import { getDataForEntityType } from '../shared/containers/profile/utils';
+import { SidebarDomainSection } from '../shared/containers/profile/sidebar/Domain/SidebarDomainSection';
+import { EntityMenuItems } from '../shared/EntityDropdown/EntityDropdown';
+import { LineageTab } from '../shared/tabs/Lineage/LineageTab';
+import { ChartStatsSummarySubHeader } from './profile/stats/ChartStatsSummarySubHeader';
+import { InputFieldsTab } from '../shared/tabs/Entity/InputFieldsTab';
+import { EmbedTab } from '../shared/tabs/Embed/EmbedTab';
+import { capitalizeFirstLetterOnly } from '../../shared/textUtil';
+import DataProductSection from '../shared/containers/profile/sidebar/DataProduct/DataProductSection';
+import { getDataProduct } from '../shared/utils';
+import EmbeddedProfile from '../shared/embed/EmbeddedProfile';
+import { LOOKER_URN } from '../../ingest/source/builder/constants';
+import { MatchedFieldList } from '../../search/matches/MatchedFieldList';
+import { matchedInputFieldRenderer } from '../../search/matches/matchedInputFieldRenderer';
+import { IncidentTab } from '../shared/tabs/Incident/IncidentTab';
+import { ChartQueryTab } from './ChartQueryTab';
+import SidebarStructuredPropsSection from '../shared/containers/profile/sidebar/StructuredProperties/SidebarStructuredPropsSection';
 
 /**
  * Definition of the DataHub Chart entity.
@@ -14,13 +37,13 @@ import ChartProfile from './profile/ChartProfile';
 export class ChartEntity implements Entity<Chart> {
     type: EntityType = EntityType.Chart;
 
-    icon = (fontSize: number, styleType: IconStyleType) => {
+    icon = (fontSize: number, styleType: IconStyleType, color?: string) => {
         if (styleType === IconStyleType.TAB_VIEW) {
-            return <LineChartOutlined style={{ fontSize }} />;
+            return <LineChartOutlined style={{ fontSize, color }} />;
         }
 
         if (styleType === IconStyleType.HIGHLIGHT) {
-            return <LineChartOutlined style={{ fontSize, color: 'rgb(144 163 236)' }} />;
+            return <LineChartOutlined style={{ fontSize, color: color || 'rgb(144 163 236)' }} />;
         }
 
         if (styleType === IconStyleType.SVG) {
@@ -33,7 +56,7 @@ export class ChartEntity implements Entity<Chart> {
             <LineChartOutlined
                 style={{
                     fontSize,
-                    color: '#BFBFBF',
+                    color: color || '#BFBFBF',
                 }}
             />
         );
@@ -47,43 +70,227 @@ export class ChartEntity implements Entity<Chart> {
 
     getAutoCompleteFieldName = () => 'title';
 
+    getGraphName = () => 'chart';
+
     getPathName = () => 'chart';
+
+    getEntityName = () => 'Chart';
 
     getCollectionName = () => 'Charts';
 
-    renderProfile = (urn: string) => <ChartProfile urn={urn} />;
+    useEntityQuery = useGetChartQuery;
+
+    getSidebarSections = () => [
+        {
+            component: SidebarAboutSection,
+        },
+        {
+            component: SidebarOwnerSection,
+        },
+        {
+            component: SidebarTagsSection,
+            properties: {
+                hasTags: true,
+                hasTerms: true,
+            },
+        },
+        {
+            component: SidebarDomainSection,
+        },
+        {
+            component: DataProductSection,
+        },
+        {
+            component: SidebarStructuredPropsSection,
+        },
+    ];
+
+    renderProfile = (urn: string) => (
+        <EntityProfile
+            urn={urn}
+            entityType={EntityType.Chart}
+            useEntityQuery={this.useEntityQuery}
+            useUpdateQuery={useUpdateChartMutation}
+            getOverrideProperties={this.getOverridePropertiesFromEntity}
+            headerDropdownItems={new Set([EntityMenuItems.UPDATE_DEPRECATION, EntityMenuItems.RAISE_INCIDENT])}
+            subHeader={{
+                component: ChartStatsSummarySubHeader,
+            }}
+            tabs={[
+                {
+                    name: 'Query',
+                    component: ChartQueryTab,
+                    display: {
+                        visible: (_, chart: GetChartQuery) => (chart?.chart?.query?.rawQuery && true) || false,
+                        enabled: (_, chart: GetChartQuery) => (chart?.chart?.query?.rawQuery && true) || false,
+                    },
+                },
+                {
+                    name: 'Documentation',
+                    component: DocumentationTab,
+                },
+                {
+                    name: 'Fields',
+                    component: InputFieldsTab,
+                    display: {
+                        visible: (_, chart: GetChartQuery) => (chart?.chart?.inputFields?.fields?.length || 0) > 0,
+                        enabled: (_, chart: GetChartQuery) => (chart?.chart?.inputFields?.fields?.length || 0) > 0,
+                    },
+                },
+                {
+                    name: 'Preview',
+                    component: EmbedTab,
+                    display: {
+                        visible: (_, chart: GetChartQuery) =>
+                            !!chart?.chart?.embed?.renderUrl && chart?.chart?.platform?.urn === LOOKER_URN,
+                        enabled: (_, chart: GetChartQuery) =>
+                            !!chart?.chart?.embed?.renderUrl && chart?.chart?.platform?.urn === LOOKER_URN,
+                    },
+                },
+                {
+                    name: 'Lineage',
+                    component: LineageTab,
+                    properties: {
+                        defaultDirection: LineageDirection.Upstream,
+                    },
+                },
+                {
+                    name: 'Dashboards',
+                    component: ChartDashboardsTab,
+                    display: {
+                        visible: (_, _1) => true,
+                        enabled: (_, chart: GetChartQuery) => (chart?.chart?.dashboards?.total || 0) > 0,
+                    },
+                },
+                {
+                    name: 'Properties',
+                    component: PropertiesTab,
+                },
+                {
+                    name: 'Incidents',
+                    component: IncidentTab,
+                    getDynamicName: (_, chart) => {
+                        const activeIncidentCount = chart?.chart?.activeIncidents?.total;
+                        return `Incidents${(activeIncidentCount && ` (${activeIncidentCount})`) || ''}`;
+                    },
+                },
+            ]}
+            sidebarSections={this.getSidebarSections()}
+        />
+    );
+
+    getOverridePropertiesFromEntity = (chart?: Chart | null): GenericEntityProperties => {
+        // TODO: Get rid of this once we have correctly formed platform coming back.
+        const name = chart?.properties?.name;
+        const subTypes = chart?.subTypes;
+        const externalUrl = chart?.properties?.externalUrl;
+        return {
+            name,
+            externalUrl,
+            entityTypeOverride: subTypes ? capitalizeFirstLetterOnly(subTypes.typeNames?.[0]) : '',
+        };
+    };
 
     renderPreview = (_: PreviewType, data: Chart) => {
+        const genericProperties = this.getGenericEntityProperties(data);
         return (
             <ChartPreview
                 urn={data.urn}
-                platform={data.tool}
-                name={data.info?.name}
-                description={data.info?.description}
-                access={data.info?.access}
+                subType={data.subTypes?.typeNames?.[0]}
+                platform={data?.platform?.properties?.displayName || capitalizeFirstLetterOnly(data?.platform?.name)}
+                name={data.properties?.name}
+                description={data.editableProperties?.description || data.properties?.description}
+                access={data.properties?.access}
                 owners={data.ownership?.owners}
                 tags={data?.globalTags || undefined}
+                glossaryTerms={data?.glossaryTerms}
+                logoUrl={data?.platform?.properties?.logoUrl}
+                domain={data.domain?.domain}
+                dataProduct={getDataProduct(genericProperties?.dataProduct)}
+                parentContainers={data.parentContainers}
+                health={data.health}
             />
         );
     };
 
     renderSearch = (result: SearchResult) => {
-        return this.renderPreview(PreviewType.SEARCH, result.entity as Chart);
+        const data = result.entity as Chart;
+        const genericProperties = this.getGenericEntityProperties(data);
+        return (
+            <ChartPreview
+                urn={data.urn}
+                subType={data.subTypes?.typeNames?.[0]}
+                platform={data?.platform?.properties?.displayName || capitalizeFirstLetterOnly(data?.platform?.name)}
+                platformInstanceId={data.dataPlatformInstance?.instanceId}
+                name={data.properties?.name}
+                description={data.editableProperties?.description || data.properties?.description}
+                access={data.properties?.access}
+                owners={data.ownership?.owners}
+                tags={data?.globalTags || undefined}
+                glossaryTerms={data?.glossaryTerms}
+                insights={result.insights}
+                logoUrl={data?.platform?.properties?.logoUrl || ''}
+                domain={data.domain?.domain}
+                dataProduct={getDataProduct(genericProperties?.dataProduct)}
+                deprecation={data.deprecation}
+                statsSummary={data.statsSummary}
+                lastUpdatedMs={data.properties?.lastModified?.time}
+                createdMs={data.properties?.created?.time}
+                externalUrl={data.properties?.externalUrl}
+                snippet={
+                    <MatchedFieldList
+                        customFieldRenderer={(matchedField) => matchedInputFieldRenderer(matchedField, data)}
+                    />
+                }
+                degree={(result as any).degree}
+                paths={(result as any).paths}
+                health={data.health}
+            />
+        );
     };
 
     getLineageVizConfig = (entity: Chart) => {
         return {
             urn: entity.urn,
-            name: entity.info?.name || '',
+            name: entity.properties?.name || entity.urn,
             type: EntityType.Chart,
-            upstreamChildren: getChildren({ entity, type: EntityType.Chart }, Direction.Upstream).map(
-                (child) => child.entity.urn,
-            ),
-            downstreamChildren: getChildren({ entity, type: EntityType.Chart }, Direction.Downstream).map(
-                (child) => child.entity.urn,
-            ),
-            icon: getLogoFromPlatform(entity.tool),
-            platform: entity.tool,
+            icon: entity?.platform?.properties?.logoUrl || undefined,
+            platform: entity?.platform,
+            subtype: entity?.subTypes?.typeNames?.[0] || undefined,
+            health: entity?.health || undefined,
         };
     };
+
+    displayName = (data: Chart) => {
+        return data.properties?.name || data.urn;
+    };
+
+    getGenericEntityProperties = (data: Chart) => {
+        return getDataForEntityType({
+            data,
+            entityType: this.type,
+            getOverrideProperties: this.getOverridePropertiesFromEntity,
+        });
+    };
+
+    supportedCapabilities = () => {
+        return new Set([
+            EntityCapabilityType.OWNERS,
+            EntityCapabilityType.GLOSSARY_TERMS,
+            EntityCapabilityType.TAGS,
+            EntityCapabilityType.DOMAINS,
+            EntityCapabilityType.DEPRECATION,
+            EntityCapabilityType.SOFT_DELETE,
+            EntityCapabilityType.DATA_PRODUCTS,
+        ]);
+    };
+
+    renderEmbeddedProfile = (urn: string) => (
+        <EmbeddedProfile
+            urn={urn}
+            entityType={EntityType.Chart}
+            useEntityQuery={this.useEntityQuery}
+            getOverrideProperties={this.getOverridePropertiesFromEntity}
+        />
+    );
 }

@@ -1,0 +1,69 @@
+query getMe {
+    me {
+        corpUser {
+            urn
+            username
+            info {
+                active
+                displayName
+                title
+                firstName
+                lastName
+                fullName
+                email
+            }
+            editableProperties {
+                displayName
+                title
+                pictureLink
+                teams
+                skills
+                persona {
+                    urn
+                }
+                platforms {
+                    urn
+                }
+            }
+            settings {
+                appearance {
+                    showSimplifiedHomepage
+                    showThemeV2
+                }
+                views {
+                    defaultView {
+                        urn
+                    }
+                }
+            }
+        }
+        platformPrivileges {
+            viewAnalytics
+            managePolicies
+            manageIdentities
+            generatePersonalAccessTokens
+            manageIngestion
+            manageSecrets
+            manageTokens
+            manageDomains
+            viewTests
+            manageTests
+            manageGlossaries
+            manageUserCredentials
+            manageTags
+            createDomains
+            createTags
+            manageGlobalViews
+            manageOwnershipTypes
+            manageGlobalAnnouncements
+            createBusinessAttributes
+            manageBusinessAttributes
+            manageStructuredProperties
+            viewStructuredPropertiesPage
+        }
+    }
+}
+
+mutation updateUserSetting($input: UpdateUserSettingInput!) {
+    updateUserSetting(input: $input)
+}

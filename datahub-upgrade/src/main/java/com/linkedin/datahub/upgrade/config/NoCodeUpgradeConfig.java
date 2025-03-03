@@ -1,38 +1,43 @@
 package com.linkedin.datahub.upgrade.config;
 
 import com.linkedin.datahub.upgrade.nocode.NoCodeUpgrade;
+import com.linkedin.entity.client.SystemEntityClient;
 import com.linkedin.metadata.entity.EntityService;
-import com.linkedin.metadata.models.registry.SnapshotEntityRegistry;
-import io.ebean.EbeanServerFactory;
-import io.ebean.config.ServerConfig;
+import com.linkedin.metadata.models.registry.EntityRegistry;
+import io.ebean.Database;
 import javax.annotation.Nonnull;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
-import static com.linkedin.metadata.entity.ebean.EbeanAspectDao.*;
-
-
+@Slf4j
 @Configuration
 public class NoCodeUpgradeConfig {
 
-  @Autowired
-  ApplicationContext applicationContext;
+  @Autowired ApplicationContext applicationContext;
 
   @Bean(name = "noCodeUpgrade")
-  @DependsOn({"gmsEbeanServiceConfig", "entityService"})
+  @DependsOn({"ebeanServer", "entityService", "systemEntityClient", "entityRegistry"})
+  @ConditionalOnProperty(name = "entityService.impl", havingValue = "ebean", matchIfMissing = true)
   @Nonnull
   public NoCodeUpgrade createInstance() {
-    final ServerConfig serverConfig = applicationContext.getBean(ServerConfig.class);
-    final EntityService entityService = applicationContext.getBean(EntityService.class);
-    final SnapshotEntityRegistry entityRegistry = new SnapshotEntityRegistry();
+    final Database ebeanServer = applicationContext.getBean(Database.class);
+    final EntityService<?> entityService = applicationContext.getBean(EntityService.class);
+    final SystemEntityClient entityClient = applicationContext.getBean(SystemEntityClient.class);
+    final EntityRegistry entityRegistry = applicationContext.getBean(EntityRegistry.class);
 
-    if (!serverConfig.getPackages().contains(EBEAN_MODEL_PACKAGE)) {
-      serverConfig.getPackages().add(EBEAN_MODEL_PACKAGE);
-    }
+    return new NoCodeUpgrade(ebeanServer, entityService, entityRegistry, entityClient);
+  }
 
-    return new NoCodeUpgrade(EbeanServerFactory.create(serverConfig), entityService, entityRegistry);
+  @Bean(name = "noCodeUpgrade")
+  @ConditionalOnProperty(name = "entityService.impl", havingValue = "cassandra")
+  @Nonnull
+  public NoCodeUpgrade createNotImplInstance() {
+    log.warn("NoCode is not supported for cassandra!");
+    return new NoCodeUpgrade(null, null, null, null);
   }
 }

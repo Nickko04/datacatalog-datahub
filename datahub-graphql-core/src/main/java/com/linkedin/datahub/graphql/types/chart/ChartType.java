@@ -1,15 +1,26 @@
 package com.linkedin.datahub.graphql.types.chart;
 
+import static com.linkedin.datahub.graphql.Constants.*;
+import static com.linkedin.metadata.Constants.*;
+
+import com.datahub.authorization.ConjunctivePrivilegeGroup;
+import com.datahub.authorization.DisjunctivePrivilegeGroup;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.linkedin.common.urn.ChartUrn;
 import com.linkedin.common.urn.CorpuserUrn;
 import com.linkedin.common.urn.Urn;
+import com.linkedin.common.urn.UrnUtils;
 import com.linkedin.data.template.StringArray;
 import com.linkedin.datahub.graphql.QueryContext;
+import com.linkedin.datahub.graphql.authorization.AuthorizationUtils;
+import com.linkedin.datahub.graphql.exception.AuthorizationException;
 import com.linkedin.datahub.graphql.generated.AutoCompleteResults;
 import com.linkedin.datahub.graphql.generated.BrowsePath;
 import com.linkedin.datahub.graphql.generated.BrowseResults;
 import com.linkedin.datahub.graphql.generated.Chart;
 import com.linkedin.datahub.graphql.generated.ChartUpdateInput;
+import com.linkedin.datahub.graphql.generated.Entity;
 import com.linkedin.datahub.graphql.generated.EntityType;
 import com.linkedin.datahub.graphql.generated.FacetFilterInput;
 import com.linkedin.datahub.graphql.generated.SearchResults;
@@ -17,164 +28,245 @@ import com.linkedin.datahub.graphql.resolvers.ResolverUtils;
 import com.linkedin.datahub.graphql.types.BrowsableEntityType;
 import com.linkedin.datahub.graphql.types.MutableType;
 import com.linkedin.datahub.graphql.types.SearchableEntityType;
-import com.linkedin.datahub.graphql.types.chart.mappers.ChartSnapshotMapper;
-import com.linkedin.datahub.graphql.types.chart.mappers.ChartUpdateInputSnapshotMapper;
+import com.linkedin.datahub.graphql.types.chart.mappers.ChartMapper;
+import com.linkedin.datahub.graphql.types.chart.mappers.ChartUpdateInputMapper;
 import com.linkedin.datahub.graphql.types.mappers.AutoCompleteResultsMapper;
 import com.linkedin.datahub.graphql.types.mappers.BrowsePathsMapper;
-import com.linkedin.datahub.graphql.types.mappers.BrowseResultMetadataMapper;
+import com.linkedin.datahub.graphql.types.mappers.BrowseResultMapper;
 import com.linkedin.datahub.graphql.types.mappers.UrnSearchResultsMapper;
+import com.linkedin.entity.EntityResponse;
 import com.linkedin.entity.client.EntityClient;
-import com.linkedin.metadata.configs.ChartSearchConfig;
-import com.linkedin.metadata.extractor.SnapshotToAspectMap;
+import com.linkedin.metadata.authorization.PoliciesConfig;
+import com.linkedin.metadata.browse.BrowseResult;
 import com.linkedin.metadata.query.AutoCompleteResult;
-import com.linkedin.metadata.query.BrowseResult;
-import com.linkedin.metadata.query.SearchResult;
-import com.linkedin.metadata.snapshot.ChartSnapshot;
-import com.linkedin.metadata.snapshot.Snapshot;
+import com.linkedin.metadata.query.filter.Filter;
+import com.linkedin.metadata.search.SearchResult;
+import com.linkedin.mxe.MetadataChangeProposal;
 import com.linkedin.r2.RemoteInvocationException;
-
 import graphql.execution.DataFetcherResult;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
-import static com.linkedin.datahub.graphql.Constants.BROWSE_PATH_DELIMITER;
+public class ChartType
+    implements SearchableEntityType<Chart, String>,
+        BrowsableEntityType<Chart, String>,
+        MutableType<ChartUpdateInput, Chart> {
 
-public class ChartType implements SearchableEntityType<Chart>, BrowsableEntityType<Chart>, MutableType<ChartUpdateInput> {
+  private static final Set<String> ASPECTS_TO_RESOLVE =
+      ImmutableSet.of(
+          CHART_KEY_ASPECT_NAME,
+          CHART_INFO_ASPECT_NAME,
+          EDITABLE_CHART_PROPERTIES_ASPECT_NAME,
+          CHART_QUERY_ASPECT_NAME,
+          OWNERSHIP_ASPECT_NAME,
+          INSTITUTIONAL_MEMORY_ASPECT_NAME,
+          GLOBAL_TAGS_ASPECT_NAME,
+          GLOSSARY_TERMS_ASPECT_NAME,
+          STATUS_ASPECT_NAME,
+          CONTAINER_ASPECT_NAME,
+          DOMAINS_ASPECT_NAME,
+          DEPRECATION_ASPECT_NAME,
+          DATA_PLATFORM_INSTANCE_ASPECT_NAME,
+          INPUT_FIELDS_ASPECT_NAME,
+          EMBED_ASPECT_NAME,
+          DATA_PRODUCTS_ASPECT_NAME,
+          BROWSE_PATHS_V2_ASPECT_NAME,
+          SUB_TYPES_ASPECT_NAME,
+          STRUCTURED_PROPERTIES_ASPECT_NAME,
+          FORMS_ASPECT_NAME);
+  private static final Set<String> FACET_FIELDS =
+      ImmutableSet.of("access", "queryType", "tool", "type");
 
-    private static final ChartSearchConfig CHART_SEARCH_CONFIG = new ChartSearchConfig();
-    private final EntityClient _entityClient;
+  private final EntityClient _entityClient;
 
-    public ChartType(final EntityClient entityClient)  {
-        _entityClient = entityClient;
+  public ChartType(final EntityClient entityClient) {
+    _entityClient = entityClient;
+  }
+
+  @Override
+  public Class<ChartUpdateInput> inputClass() {
+    return ChartUpdateInput.class;
+  }
+
+  @Override
+  public EntityType type() {
+    return EntityType.CHART;
+  }
+
+  @Override
+  public Function<Entity, String> getKeyProvider() {
+    return Entity::getUrn;
+  }
+
+  @Override
+  public Class<Chart> objectClass() {
+    return Chart.class;
+  }
+
+  @Override
+  public List<DataFetcherResult<Chart>> batchLoad(
+      @Nonnull List<String> urnStrs, @Nonnull QueryContext context) throws Exception {
+    final List<Urn> urns = urnStrs.stream().map(UrnUtils::getUrn).collect(Collectors.toList());
+    try {
+
+      final Map<Urn, EntityResponse> chartMap =
+          _entityClient.batchGetV2(
+              context.getOperationContext(),
+              CHART_ENTITY_NAME,
+              new HashSet<>(urns),
+              ASPECTS_TO_RESOLVE);
+
+      final List<EntityResponse> gmsResults = new ArrayList<>(urnStrs.size());
+      for (Urn urn : urns) {
+        gmsResults.add(chartMap.getOrDefault(urn, null));
+      }
+      return gmsResults.stream()
+          .map(
+              gmsChart ->
+                  gmsChart == null
+                      ? null
+                      : DataFetcherResult.<Chart>newResult()
+                          .data(ChartMapper.map(context, gmsChart))
+                          .build())
+          .collect(Collectors.toList());
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to batch load Charts", e);
     }
+  }
 
-    @Override
-    public Class<ChartUpdateInput> inputClass() {
-        return ChartUpdateInput.class;
+  @Override
+  public SearchResults search(
+      @Nonnull String query,
+      @Nullable List<FacetFilterInput> filters,
+      int start,
+      int count,
+      @Nonnull QueryContext context)
+      throws Exception {
+    final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
+    final SearchResult searchResult =
+        _entityClient.search(
+            context.getOperationContext().withSearchFlags(flags -> flags.setFulltext(true)),
+            "chart",
+            query,
+            facetFilters,
+            start,
+            count);
+    return UrnSearchResultsMapper.map(context, searchResult);
+  }
+
+  @Override
+  public AutoCompleteResults autoComplete(
+      @Nonnull String query,
+      @Nullable String field,
+      @Nullable Filter filters,
+      int limit,
+      @Nonnull QueryContext context)
+      throws Exception {
+    final AutoCompleteResult result =
+        _entityClient.autoComplete(context.getOperationContext(), "chart", query, filters, limit);
+    return AutoCompleteResultsMapper.map(context, result);
+  }
+
+  @Override
+  public BrowseResults browse(
+      @Nonnull List<String> path,
+      @Nullable List<FacetFilterInput> filters,
+      int start,
+      int count,
+      @Nonnull QueryContext context)
+      throws Exception {
+    final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, FACET_FIELDS);
+    final String pathStr =
+        path.size() > 0 ? BROWSE_PATH_DELIMITER + String.join(BROWSE_PATH_DELIMITER, path) : "";
+    final BrowseResult result =
+        _entityClient.browse(
+            context.getOperationContext().withSearchFlags(flags -> flags.setFulltext(false)),
+            "chart",
+            pathStr,
+            facetFilters,
+            start,
+            count);
+    return BrowseResultMapper.map(context, result);
+  }
+
+  @Override
+  public List<BrowsePath> browsePaths(@Nonnull String urn, @Nonnull QueryContext context)
+      throws Exception {
+    final StringArray result =
+        _entityClient.getBrowsePaths(context.getOperationContext(), getChartUrn(urn));
+    return BrowsePathsMapper.map(context, result);
+  }
+
+  private ChartUrn getChartUrn(String urnStr) {
+    try {
+      return ChartUrn.createFromString(urnStr);
+    } catch (URISyntaxException e) {
+      throw new RuntimeException(
+          String.format("Failed to retrieve chart with urn %s, invalid urn", urnStr));
     }
+  }
 
-    @Override
-    public EntityType type() {
-        return EntityType.CHART;
+  @Override
+  public Chart update(
+      @Nonnull String urn, @Nonnull ChartUpdateInput input, @Nonnull QueryContext context)
+      throws Exception {
+    if (isAuthorized(urn, input, context)) {
+      final CorpuserUrn actor = CorpuserUrn.createFromString(context.getActorUrn());
+      final Collection<MetadataChangeProposal> proposals =
+          ChartUpdateInputMapper.map(context, input, actor);
+      proposals.forEach(proposal -> proposal.setEntityUrn(UrnUtils.getUrn(urn)));
+
+      try {
+        _entityClient.batchIngestProposals(context.getOperationContext(), proposals, false);
+      } catch (RemoteInvocationException e) {
+        throw new RuntimeException(String.format("Failed to write entity with urn %s", urn), e);
+      }
+
+      return load(urn, context).getData();
     }
+    throw new AuthorizationException(
+        "Unauthorized to perform this action. Please contact your DataHub administrator.");
+  }
 
-    @Override
-    public Class<Chart> objectClass() {
-        return Chart.class;
+  private boolean isAuthorized(
+      @Nonnull String urn, @Nonnull ChartUpdateInput update, @Nonnull QueryContext context) {
+    // Decide whether the current principal should be allowed to update the Dataset.
+    final DisjunctivePrivilegeGroup orPrivilegeGroups = getAuthorizedPrivileges(update);
+    return AuthorizationUtils.isAuthorized(
+        context, PoliciesConfig.CHART_PRIVILEGES.getResourceType(), urn, orPrivilegeGroups);
+  }
+
+  private DisjunctivePrivilegeGroup getAuthorizedPrivileges(final ChartUpdateInput updateInput) {
+
+    final ConjunctivePrivilegeGroup allPrivilegesGroup =
+        new ConjunctivePrivilegeGroup(
+            ImmutableList.of(PoliciesConfig.EDIT_ENTITY_PRIVILEGE.getType()));
+
+    List<String> specificPrivileges = new ArrayList<>();
+    if (updateInput.getOwnership() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_OWNERS_PRIVILEGE.getType());
     }
-
-    @Override
-    public List<DataFetcherResult<Chart>> batchLoad(@Nonnull List<String> urns, @Nonnull QueryContext context) throws Exception {
-        final List<Urn> chartUrns = urns.stream()
-                .map(this::getChartUrn)
-                .collect(Collectors.toList());
-
-        try {
-            final Map<Urn, com.linkedin.entity.Entity> chartMap = _entityClient.batchGet(chartUrns
-                    .stream()
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet()));
-
-            final List<com.linkedin.entity.Entity> gmsResults = new ArrayList<>();
-            for (Urn urn : chartUrns) {
-                gmsResults.add(chartMap.getOrDefault(urn, null));
-            }
-            return gmsResults.stream()
-                    .map(gmsChart -> gmsChart == null ? null
-                        : DataFetcherResult.<Chart>newResult()
-                            .data(ChartSnapshotMapper.map(gmsChart.getValue().getChartSnapshot()))
-                            .localContext(SnapshotToAspectMap.extractAspectMap(gmsChart.getValue().getChartSnapshot()))
-                            .build())
-                    .collect(Collectors.toList());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to batch load Charts", e);
-        }
+    if (updateInput.getEditableProperties() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_DOCS_PRIVILEGE.getType());
     }
-
-    @Override
-    public SearchResults search(@Nonnull String query,
-                                @Nullable List<FacetFilterInput> filters,
-                                int start,
-                                int count,
-                                @Nonnull QueryContext context) throws Exception {
-        final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, CHART_SEARCH_CONFIG.getFacetFields());
-        final SearchResult searchResult = _entityClient.search(
-            "chart", query, facetFilters, start, count);
-        return UrnSearchResultsMapper.map(searchResult);
+    if (updateInput.getGlobalTags() != null) {
+      specificPrivileges.add(PoliciesConfig.EDIT_ENTITY_TAGS_PRIVILEGE.getType());
     }
+    final ConjunctivePrivilegeGroup specificPrivilegeGroup =
+        new ConjunctivePrivilegeGroup(specificPrivileges);
 
-    @Override
-    public AutoCompleteResults autoComplete(@Nonnull String query,
-                                            @Nullable String field,
-                                            @Nullable List<FacetFilterInput> filters,
-                                            int limit,
-                                            @Nonnull QueryContext context) throws Exception {
-        final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, CHART_SEARCH_CONFIG.getFacetFields());
-        final AutoCompleteResult result = _entityClient.autoComplete("chart", query, facetFilters, limit);
-        return AutoCompleteResultsMapper.map(result);
-    }
-
-    @Override
-    public BrowseResults browse(@Nonnull List<String> path,
-                                @Nullable List<FacetFilterInput> filters,
-                                int start,
-                                int count,
-                                @Nonnull QueryContext context) throws Exception {
-        final Map<String, String> facetFilters = ResolverUtils.buildFacetFilters(filters, CHART_SEARCH_CONFIG.getFacetFields());
-        final String pathStr = path.size() > 0 ? BROWSE_PATH_DELIMITER + String.join(BROWSE_PATH_DELIMITER, path) : "";
-        final BrowseResult result = _entityClient.browse(
-                "chart",
-                pathStr,
-                facetFilters,
-                start,
-                count);
-        final List<String> urns = result.getEntities().stream().map(entity -> entity.getUrn().toString()).collect(Collectors.toList());
-        final List<Chart> charts = batchLoad(urns, context).stream().map(chartResult -> chartResult.getData()).collect(
-            Collectors.toList());
-        final BrowseResults browseResults = new BrowseResults();
-        browseResults.setStart(result.getFrom());
-        browseResults.setCount(result.getPageSize());
-        browseResults.setTotal(result.getNumEntities());
-        browseResults.setMetadata(BrowseResultMetadataMapper.map(result.getMetadata()));
-        browseResults.setEntities(charts.stream()
-                .map(chart -> (com.linkedin.datahub.graphql.generated.Entity) chart)
-                .collect(Collectors.toList()));
-        return browseResults;
-    }
-
-    @Override
-    public List<BrowsePath> browsePaths(@Nonnull String urn, @Nonnull QueryContext context) throws Exception {
-        final StringArray result = _entityClient.getBrowsePaths(getChartUrn(urn));
-        return BrowsePathsMapper.map(result);
-    }
-
-    private ChartUrn getChartUrn(String urnStr) {
-        try {
-            return ChartUrn.createFromString(urnStr);
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(String.format("Failed to retrieve chart with urn %s, invalid urn", urnStr));
-        }
-    }
-
-    @Override
-    public Chart update(@Nonnull ChartUpdateInput input, @Nonnull QueryContext context) throws Exception {
-
-        final CorpuserUrn actor = CorpuserUrn.createFromString(context.getActor());
-        final ChartSnapshot chartSnapshot = ChartUpdateInputSnapshotMapper.map(input, actor);
-        final Snapshot snapshot = Snapshot.create(chartSnapshot);
-
-        try {
-            _entityClient.update(new com.linkedin.entity.Entity().setValue(snapshot));
-        } catch (RemoteInvocationException e) {
-            throw new RuntimeException(String.format("Failed to write entity with urn %s", input.getUrn()), e);
-        }
-
-        return load(input.getUrn(), context).getData();
-    }
+    // If you either have all entity privileges, or have the specific privileges required, you are
+    // authorized.
+    return new DisjunctivePrivilegeGroup(
+        ImmutableList.of(allPrivilegesGroup, specificPrivilegeGroup));
+  }
 }

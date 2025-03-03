@@ -1,7 +1,7 @@
 plugins {
-    id 'java'
+    id 'java-library'
 }
-
+apply from: '../../gradle/coverage/java-coverage.gradle'
 apply plugin: 'pegasus'
 
 configurations {
@@ -11,34 +11,43 @@ configurations {
 dependencies {
     avro project(path: ':metadata-models', configuration: 'avroSchema')
 
-    compile project(':li-utils')
-    compile (project(':gms:factories')) {
+    implementation project(':li-utils')
+    implementation(project(':metadata-service:factories')) {
         exclude group: 'org.neo4j.test'
     }
-    compile project(':gms:client')
-    compile project(':metadata-utils')
-    compile project(":entity-registry")
-    compile project(':metadata-builders')
-    compile project(':metadata-dao-impl:restli-dao')
-    compile project(':metadata-events:mxe-schemas')
-    compile project(':metadata-events:mxe-avro-1.7')
-    compile project(':metadata-events:mxe-registration')
-    compile project(':metadata-events:mxe-utils-avro-1.7')
+    implementation project(':metadata-service:auth-config')
+    implementation project(':metadata-service:restli-client-api')
+    implementation project(':metadata-io')
+    implementation project(':ingestion-scheduler')
+    implementation project(':metadata-utils')
+    implementation project(":entity-registry")
+    implementation project(':metadata-events:mxe-avro')
+    implementation project(':metadata-events:mxe-registration')
+    implementation project(':metadata-events:mxe-utils-avro')
+    implementation project(':datahub-graphql-core')
 
-    compile externalDependency.elasticSearchRest
-    compile externalDependency.gmaDaoApi
-    compile externalDependency.gmaNeo4jDao
-    compile externalDependency.kafkaAvroSerde
-    compile externalDependency.neo4jJavaDriver
+    implementation externalDependency.elasticSearchRest
+    implementation externalDependency.kafkaAvroSerde
+    implementation externalDependency.protobuf
+    implementation externalDependency.neo4jJavaDriver
 
-    compile externalDependency.springKafka
-    compile externalDependency.springActuator
+    implementation externalDependency.springKafka
+    implementation externalDependency.annotationApi
+    implementation externalDependency.opentelemetrySdkTrace
 
+    implementation externalDependency.slf4jApi
     compileOnly externalDependency.lombok
 
     annotationProcessor externalDependency.lombok
 
-    runtime externalDependency.logbackClassic
+    runtimeOnly externalDependency.logbackClassic
+
+    testImplementation externalDependency.mockito
+    implementation externalDependency.awsMskIamAuth
+
+    testImplementation externalDependency.testng
+    testImplementation externalDependency.springBootTest
+    testRuntimeOnly externalDependency.logbackClassic
 }
 
 task avroSchemaSources(type: Copy) {
@@ -52,6 +61,7 @@ task avroSchemaSources(type: Copy) {
 }
 
 compileJava.dependsOn avroSchemaSources
+processResources.dependsOn avroSchemaSources
 
 clean {
     project.delete("src/main/resources/avro")

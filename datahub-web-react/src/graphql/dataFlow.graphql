@@ -1,10 +1,15 @@
 fragment dataFlowFields on DataFlow {
     urn
     type
+    exists
+    lastIngested
     orchestrator
     flowId
     cluster
-    info {
+    platform {
+        ...platformFields
+    }
+    properties {
         name
         description
         project
@@ -13,6 +18,9 @@ fragment dataFlowFields on DataFlow {
             key
             value
         }
+    }
+    privileges {
+        ...entityPrivileges
     }
     editableProperties {
         description
@@ -23,19 +31,103 @@ fragment dataFlowFields on DataFlow {
     globalTags {
         ...globalTagsFields
     }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    status {
+        removed
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    parentContainers {
+        ...parentContainersFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+    health {
+        ...entityHealth
+    }
+    activeIncidents: incidents(start: 0, count: 1, state: ACTIVE) {
+        total
+    }
 }
 
 query getDataFlow($urn: String!) {
     dataFlow(urn: $urn) {
         ...dataFlowFields
-        dataJobs {
-            entities {
+        upstream: lineage(input: { direction: UPSTREAM, start: 0, count: 100 }) {
+            ...partialLineageResults
+        }
+        downstream: lineage(input: { direction: DOWNSTREAM, start: 0, count: 100 }) {
+            ...partialLineageResults
+        }
+        autoRenderAspects: aspects(input: { autoRenderOnly: true }) {
+            ...autoRenderAspectFields
+        }
+        structuredProperties {
+            properties {
+                ...structuredPropertiesFields
+            }
+        }
+        forms {
+            ...formsFields
+        }
+        ...notes
+    }
+}
+
+query getDataFlowChildJobs($urn: String!, $start: Int, $count: Int) {
+    dataFlow(urn: $urn) {
+        ...dataFlowFields
+        childJobs: relationships(input: { types: ["IsPartOf"], direction: INCOMING, start: $start, count: $count }) {
+            start
+            count
+            total
+            relationships {
                 entity {
-                    urn
-                    type
                     ... on DataJob {
-                        ...dataJobFields
-                        ...shallowLineageFields
+                        urn
+                        type
+                        jobId
+                        dataFlow {
+                            urn
+                            type
+                            orchestrator
+                            platform {
+                                ...platformFields
+                            }
+                        }
+                        ownership {
+                            ...ownershipFields
+                        }
+                        properties {
+                            name
+                            description
+                        }
+                        editableProperties {
+                            description
+                        }
+                        globalTags {
+                            ...globalTagsFields
+                        }
+                        glossaryTerms {
+                            ...glossaryTerms
+                        }
+                        deprecation {
+                            ...deprecationFields
+                        }
                     }
                 }
             }
@@ -43,20 +135,8 @@ query getDataFlow($urn: String!) {
     }
 }
 
-mutation updateDataFlow($input: DataFlowUpdateInput!) {
-    updateDataFlow(input: $input) {
-        ...dataFlowFields
-        dataJobs {
-            entities {
-                entity {
-                    urn
-                    type
-                    ... on DataJob {
-                        ...dataJobFields
-                        ...shallowLineageFields
-                    }
-                }
-            }
-        }
+mutation updateDataFlow($urn: String!, $input: DataFlowUpdateInput!) {
+    updateDataFlow(urn: $urn, input: $input) {
+        urn
     }
 }

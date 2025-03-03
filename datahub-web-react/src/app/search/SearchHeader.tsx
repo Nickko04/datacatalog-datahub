@@ -1,38 +1,44 @@
-import * as React from 'react';
-import { Image, Layout, Space, Typography } from 'antd';
-import { Link } from 'react-router-dom';
-import styled, { useTheme } from 'styled-components';
+import React, { useState } from 'react';
+import { Layout } from 'antd';
+import styled from 'styled-components';
 
 import { SearchBar } from './SearchBar';
 import { ManageAccount } from '../shared/ManageAccount';
-import AnalyticsLink from './AnalyticsLink';
 import { AutoCompleteResultForEntity, EntityType } from '../../types.generated';
 import EntityRegistry from '../entity/EntityRegistry';
-
-const HeaderTitle = styled(Typography.Title)`
-    && {
-        color: ${(props) => props.theme.styles['layout-header-color']};
-        padding-left: 12px;
-        margin: 0;
-    }
-`;
+import { ANTD_GRAY } from '../entity/shared/constants';
+import { HeaderLinks } from '../shared/admin/HeaderLinks';
+import { useAppConfig, useIsShowAcrylInfoEnabled } from '../useAppConfig';
+import DemoButton from '../entity/shared/components/styled/DemoButton';
+import AppLogoLink from '../shared/AppLogoLink';
 
 const { Header } = Layout;
 
 const styles = {
     header: {
         position: 'fixed',
-        zIndex: 1,
+        zIndex: 10,
         width: '100%',
-        height: '80px',
         lineHeight: '20px',
-        padding: '0px 40px',
+        padding: '0px 20px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        borderBottom: `1px solid ${ANTD_GRAY[4.5]}`,
     },
-    logoImage: { height: '32px', width: 'auto' },
 };
+
+const LogoSearchContainer = styled.div`
+    display: flex;
+    flex: 1;
+`;
+
+const NavGroup = styled.div`
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 200px;
+`;
 
 type Props = {
     initialQuery: string;
@@ -49,12 +55,6 @@ const defaultProps = {
     authenticatedUserPictureLink: undefined,
 };
 
-const NavGroup = styled.div`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-`;
-
 /**
  * A header containing a Logo, Search Bar view, & an account management dropdown.
  */
@@ -68,27 +68,35 @@ export const SearchHeader = ({
     authenticatedUserPictureLink,
     entityRegistry,
 }: Props) => {
-    const themeConfig = useTheme();
+    const [isSearchBarFocused, setIsSearchBarFocused] = useState(false);
+    const showAcrylInfo = useIsShowAcrylInfoEnabled();
+    const appConfig = useAppConfig();
+    const viewsEnabled = appConfig.config?.viewsConfig?.enabled || false;
 
     return (
         <Header style={styles.header as any}>
-            <Link to="/">
-                <Space size={4}>
-                    <Image style={styles.logoImage} src={themeConfig.assets.logoUrl} preview={false} />
-                    <HeaderTitle level={4}>{themeConfig.content.title}</HeaderTitle>
-                </Space>
-            </Link>
-            <SearchBar
-                initialQuery={initialQuery}
-                placeholderText={placeholderText}
-                suggestions={suggestions}
-                onSearch={onSearch}
-                onQueryChange={onQueryChange}
-                entityRegistry={entityRegistry}
-            />
+            <LogoSearchContainer>
+                <AppLogoLink />
+                <SearchBar
+                    initialQuery={initialQuery}
+                    placeholderText={placeholderText}
+                    suggestions={suggestions}
+                    onSearch={onSearch}
+                    onQueryChange={onQueryChange}
+                    entityRegistry={entityRegistry}
+                    setIsSearchBarFocused={setIsSearchBarFocused}
+                    viewsEnabled={viewsEnabled}
+                    combineSiblings
+                    fixAutoComplete
+                    showQuickFilters
+                    showViewAllResults
+                    showCommandK
+                />
+            </LogoSearchContainer>
             <NavGroup>
-                <AnalyticsLink />
+                <HeaderLinks areLinksHidden={isSearchBarFocused} />
                 <ManageAccount urn={authenticatedUserUrn} pictureLink={authenticatedUserPictureLink || ''} />
+                {showAcrylInfo && <DemoButton />}
             </NavGroup>
         </Header>
     );

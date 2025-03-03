@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { Route, Switch, useRouteMatch, useLocation } from 'react-router-dom';
-import { useHistory, Redirect } from 'react-router';
+import { Redirect, useHistory } from 'react-router';
 import { Tabs } from 'antd';
 import { TabsProps } from 'antd/lib/tabs';
+import styled from 'styled-components';
 
 const { TabPane } = Tabs;
 
@@ -12,9 +13,18 @@ interface Props extends TabsProps {
         name: string;
         path: string;
         content: React.ReactNode;
+        display?: {
+            enabled: () => boolean;
+        };
     }>;
     onTabChange?: (selectedTab: string) => void;
 }
+
+const RoutedTabsStyle = styled.div`
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+`;
 
 /**
  * A tab view where each tab is associated with a route mounted on top of the current path.
@@ -24,30 +34,32 @@ export const RoutedTabs = ({ defaultPath, tabs, onTabChange, ...props }: Props) 
     const { path, url } = useRouteMatch();
     const { pathname } = useLocation();
     const history = useHistory();
-
     const subRoutes = tabs.map((tab) => tab.path.replace('/', ''));
     const trimmedPathName = pathname.endsWith('/') ? pathname.slice(0, pathname.length - 1) : pathname;
     const splitPathName = trimmedPathName.split('/');
     const providedPath = splitPathName[splitPathName.length - 1];
     const activePath = subRoutes.includes(providedPath) ? providedPath : defaultPath.replace('/', '');
-
     return (
-        <div>
+        <RoutedTabsStyle>
             <Tabs
                 defaultActiveKey={activePath}
+                activeKey={activePath}
                 size="large"
                 onTabClick={(tab: string) => onTabChange && onTabChange(tab)}
-                onChange={(newPath) => history.push(`${url}/${newPath}`)}
+                onChange={(newPath) => history.replace(`${url}/${newPath}`)}
                 {...props}
             >
-                {tabs.map((tab) => (
-                    <TabPane tab={tab.name} key={tab.path.replace('/', '')} />
-                ))}
+                {tabs.map((tab) => {
+                    return (
+                        <TabPane tab={tab.name} key={tab.path.replace('/', '')} disabled={!tab.display?.enabled()} />
+                    );
+                })}
             </Tabs>
             <Switch>
                 <Route exact path={path}>
                     <Redirect to={`${pathname}${pathname.endsWith('/') ? '' : '/'}${defaultPath}`} />
                 </Route>
+
                 {tabs.map((tab) => (
                     <Route
                         exact
@@ -57,6 +69,6 @@ export const RoutedTabs = ({ defaultPath, tabs, onTabChange, ...props }: Props) 
                     />
                 ))}
             </Switch>
-        </div>
+        </RoutedTabsStyle>
     );
 };

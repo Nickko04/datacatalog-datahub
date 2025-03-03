@@ -1,36 +1,28 @@
 package com.linkedin.metadata.search.elasticsearch.update;
 
-import com.linkedin.metadata.models.registry.EntityRegistry;
-import com.linkedin.metadata.utils.elasticsearch.IndexConvention;
+import io.datahubproject.metadata.context.OperationContext;
+import java.io.IOException;
+import java.util.Map;
 import javax.annotation.Nonnull;
-import org.elasticsearch.action.bulk.BackoffPolicy;
-import org.elasticsearch.action.bulk.BulkProcessor;
-import org.elasticsearch.action.delete.DeleteRequest;
-import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.action.update.UpdateRequest;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.common.xcontent.XContentType;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.opensearch.action.delete.DeleteRequest;
+import org.opensearch.action.update.UpdateRequest;
+import org.opensearch.client.RequestOptions;
+import org.opensearch.client.RestHighLevelClient;
+import org.opensearch.client.indices.GetIndexRequest;
+import org.opensearch.client.indices.GetIndexResponse;
+import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.index.query.QueryBuilders;
+import org.opensearch.script.Script;
 
-
+@Slf4j
+@RequiredArgsConstructor
 public class ESWriteDAO {
-  private final EntityRegistry entityRegistry;
-  private final BulkProcessor bulkProcessor;
-  private final IndexConvention indexConvention;
 
-  public ESWriteDAO(EntityRegistry entityRegistry, RestHighLevelClient searchClient, IndexConvention indexConvention,
-      int bulkRequestsLimit, int bulkFlushPeriod, int numRetries, long retryInterval) {
-    this.entityRegistry = entityRegistry;
-    this.indexConvention = indexConvention;
-    this.bulkProcessor = BulkProcessor.builder(
-        (request, bulkListener) -> searchClient.bulkAsync(request, RequestOptions.DEFAULT, bulkListener),
-        BulkListener.getInstance())
-        .setBulkActions(bulkRequestsLimit)
-        .setFlushInterval(TimeValue.timeValueSeconds(bulkFlushPeriod))
-        .setBackoffPolicy(BackoffPolicy.constantBackoff(TimeValue.timeValueSeconds(retryInterval), numRetries))
-        .build();
-  }
+  private final RestHighLevelClient searchClient;
+  private final ESBulkProcessor bulkProcessor;
+  private final int numRetries;
 
   /**
    * Updates or inserts the given search document.
@@ -39,12 +31,18 @@ public class ESWriteDAO {
    * @param document the document to update / insert
    * @param docId the ID of the document
    */
-  public void upsertDocument(@Nonnull String entityName, @Nonnull String document, @Nonnull String docId) {
-    final String indexName = indexConvention.getIndexName(entityRegistry.getEntitySpec(entityName));
-    final IndexRequest indexRequest = new IndexRequest(indexName).id(docId).source(document, XContentType.JSON);
-    final UpdateRequest updateRequest = new UpdateRequest(indexName, docId).doc(document, XContentType.JSON)
-        .detectNoop(false)
-        .upsert(indexRequest);
+  public void upsertDocument(
+      @Nonnull OperationContext opContext,
+      @Nonnull String entityName,
+      @Nonnull String document,
+      @Nonnull String docId) {
+    final UpdateRequest updateRequest =
+        new UpdateRequest(toIndexName(opContext, entityName), docId)
+            .detectNoop(false)
+            .docAsUpsert(true)
+            .doc(document, XContentType.JSON)
+            .retryOnConflict(numRetries);
+
     bulkProcessor.add(updateRequest);
   }
 
@@ -54,8 +52,51 @@ public class ESWriteDAO {
    * @param entityName name of the entity
    * @param docId the ID of the document to delete
    */
-  public void deleteDocument(@Nonnull String entityName, @Nonnull String docId) {
-    final String indexName = indexConvention.getIndexName(entityRegistry.getEntitySpec(entityName));
-    bulkProcessor.add(new DeleteRequest(indexName).id(docId));
+  public void deleteDocument(
+      @Nonnull OperationContext opContext, @Nonnull String entityName, @Nonnull String docId) {
+    bulkProcessor.add(new DeleteRequest(toIndexName(opContext, entityName)).id(docId));
+  }
+
+  /** Applies a script to a particular document */
+  public void applyScriptUpdate(
+      @Nonnull OperationContext opContext,
+      @Nonnull String entityName,
+      @Nonnull String docId,
+      @Nonnull String script,
+      Map<String, Object> upsert) {
+    UpdateRequest updateRequest =
+        new UpdateRequest(toIndexName(opContext, entityName), docId)
+            .detectNoop(false)
+            .scriptedUpsert(true)
+            .retryOnConflict(numRetries)
+            .script(new Script(script))
+            .upsert(upsert);
+    bulkProcessor.add(updateRequest);
+  }
+
+  /** Clear all documents in all the indices */
+  public void clear(@Nonnull OperationContext opContext) {
+    String[] indices =
+        getIndices(opContext.getSearchContext().getIndexConvention().getAllEntityIndicesPattern());
+    bulkProcessor.deleteByQuery(QueryBuilders.matchAllQuery(), indices);
+  }
+
+  private String[] getIndices(String pattern) {
+    try {
+      GetIndexResponse response =
+          searchClient.indices().get(new GetIndexRequest(pattern), RequestOptions.DEFAULT);
+      return response.getIndices();
+    } catch (IOException e) {
+      log.error("Failed to get indices using pattern {}", pattern);
+      return new String[] {};
+    }
+  }
+
+  private static String toIndexName(
+      @Nonnull OperationContext opContext, @Nonnull String entityName) {
+    return opContext
+        .getSearchContext()
+        .getIndexConvention()
+        .getIndexName(opContext.getEntityRegistry().getEntitySpec(entityName));
   }
 }

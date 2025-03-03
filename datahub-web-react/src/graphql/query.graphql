@@ -1,0 +1,101 @@
+query getQuery($urn: String!) {
+    entity(urn: $urn) {
+        urn
+        type
+        ... on QueryEntity {
+            ...query
+        }
+    }
+}
+
+fragment query on QueryEntity {
+    urn
+    properties {
+        name
+        description
+        source
+        statement {
+            value
+            language
+        }
+        created {
+            time
+            actor
+        }
+        lastModified {
+            time
+            actor
+        }
+        origin {
+            ...searchResultFields
+        }
+    }
+    platform {
+        ...platformFields
+    }
+    subjects {
+        dataset {
+            urn
+            type
+            name
+        }
+        schemaField {
+            urn
+            type
+            fieldPath
+        }
+    }
+}
+
+query listQueries($input: ListQueriesInput!) {
+    listQueries(input: $input) {
+        start
+        total
+        count
+        queries {
+            ...query
+        }
+    }
+}
+
+mutation createQuery($input: CreateQueryInput!) {
+    createQuery(input: $input) {
+        ...query
+    }
+}
+
+mutation updateQuery($urn: String!, $input: UpdateQueryInput!) {
+    updateQuery(urn: $urn, input: $input) {
+        ...query
+    }
+}
+
+mutation deleteQuery($urn: String!) {
+    deleteQuery(urn: $urn)
+}
+
+query searchAcrossLineageForQueries($input: SearchAcrossLineageInput!) {
+    searchAcrossLineage(input: $input) {
+        start
+        count
+        total
+        searchResults {
+            entity {
+                urn
+                type
+                ...searchResultFieldsNoLineage
+            }
+            paths {
+                path {
+                    urn
+                    type
+                    ... on QueryEntity {
+                        ...query
+                    }
+                }
+            }
+            explored
+            ignoredAsHop
+        }
+    }
+}

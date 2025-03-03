@@ -2,17 +2,246 @@ fragment globalTagsFields on GlobalTags {
     tags {
         tag {
             urn
+            type
             name
             description
+            properties {
+                name
+                colorHex
+            }
         }
+        associatedUrn
+    }
+}
+
+fragment displayPropertiesFields on DisplayProperties {
+    colorHex
+    icon {
+        name
+        style
+        iconLibrary
+    }
+}
+
+fragment rootGlossaryNodeWithFourLayers on GlossaryNode {
+    urn
+    type
+    properties {
+        name
+        description
+    }
+    displayProperties {
+        ...displayPropertiesFields
+    }
+    children: relationships(input: { types: ["IsPartOf"], direction: INCOMING, start: 0, count: 500 }) {
+        total
+        relationships {
+            type
+            entity {
+                type
+                ... on GlossaryTerm {
+                    urn
+                }
+                ... on GlossaryNode {
+                    urn
+                    children: relationships(input: { types: ["IsPartOf"], direction: INCOMING, start: 0, count: 500 }) {
+                        total
+                        relationships {
+                            type
+                            entity {
+                                type
+                                ... on GlossaryTerm {
+                                    urn
+                                }
+                                ... on GlossaryNode {
+                                    urn
+                                    children: relationships(
+                                        input: { types: ["IsPartOf"], direction: INCOMING, start: 0, count: 500 }
+                                    ) {
+                                        total
+                                        relationships {
+                                            type
+                                            entity {
+                                                type
+                                                ... on GlossaryTerm {
+                                                    urn
+                                                }
+                                                ... on GlossaryNode {
+                                                    urn
+                                                    children: relationships(
+                                                        input: {
+                                                            types: ["IsPartOf"]
+                                                            direction: INCOMING
+                                                            start: 0
+                                                            count: 500
+                                                        }
+                                                    ) {
+                                                        total
+                                                        relationships {
+                                                            type
+                                                            entity {
+                                                                type
+                                                                ... on GlossaryTerm {
+                                                                    urn
+                                                                }
+                                                                ... on GlossaryNode {
+                                                                    urn
+                                                                    children: relationships(
+                                                                        input: {
+                                                                            types: ["IsPartOf"]
+                                                                            direction: INCOMING
+                                                                            start: 0
+                                                                            count: 500
+                                                                        }
+                                                                    ) {
+                                                                        total
+                                                                        relationships {
+                                                                            type
+                                                                            entity {
+                                                                                type
+                                                                                ... on GlossaryTerm {
+                                                                                    urn
+                                                                                }
+                                                                                ... on GlossaryNode {
+                                                                                    urn
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fragment glossaryNode on GlossaryNode {
+    urn
+    type
+    properties {
+        name
+        description
+    }
+    displayProperties {
+        ...displayPropertiesFields
+    }
+    children: relationships(input: { types: ["IsPartOf"], direction: INCOMING, start: 0, count: 1000 }) {
+        total
+        relationships {
+            type
+            entity {
+                ... on GlossaryTerm {
+                    urn
+                    name
+                    type
+                    hierarchicalName
+                    properties {
+                        name
+                        description
+                    }
+                }
+                ... on GlossaryNode {
+                    urn
+                }
+            }
+        }
+    }
+}
+
+fragment glossaryTerm on GlossaryTerm {
+    urn
+    name
+    type
+    hierarchicalName
+    properties {
+        name
+        description
+        definition
+        termSource
+        customProperties {
+            key
+            value
+        }
+    }
+    ownership {
+        ...ownershipFields
+    }
+    parentNodes {
+        ...parentNodesFields
     }
 }
 
 fragment glossaryTerms on GlossaryTerms {
     terms {
         term {
+            ...glossaryTerm
+        }
+        actor {
             urn
+        }
+        associatedUrn
+    }
+}
+
+fragment deprecationFields on Deprecation {
+    actor
+    deprecated
+    note
+    decommissionTime
+    actorEntity {
+        urn
+        type
+        ...entityDisplayNameFields
+    }
+    replacement {
+        ...entityDisplayNameFields
+        ... on Dataset {
+            platform {
+                ...platformFields
+            }
+        }
+    }
+}
+
+fragment parentContainersFields on ParentContainersResult {
+    count
+    containers {
+        ...parentContainerFields
+    }
+}
+
+fragment parentNodesFields on ParentNodesResult {
+    count
+    nodes {
+        urn
+        type
+        properties {
             name
+        }
+    }
+}
+
+fragment parentDomainsFields on ParentDomainsResult {
+    count
+    domains {
+        urn
+        type
+        ... on Domain {
+            properties {
+                name
+                description
+            }
         }
     }
 }
@@ -33,16 +262,32 @@ fragment ownershipFields on Ownership {
                     lastName
                     fullName
                 }
-                editableInfo {
+                properties {
+                    active
+                    displayName
+                    title
+                    email
+                    firstName
+                    lastName
+                    fullName
+                }
+                editableProperties {
+                    displayName
+                    title
                     pictureLink
+                    email
                 }
             }
-
             ... on CorpGroup {
                 urn
                 type
                 name
+                properties {
+                    displayName
+                    email
+                }
                 info {
+                    displayName
                     email
                     admins {
                         urn
@@ -85,9 +330,73 @@ fragment ownershipFields on Ownership {
             }
         }
         type
+        ownershipType {
+            urn
+            type
+            info {
+                name
+                description
+            }
+            status {
+                removed
+            }
+        }
+        associatedUrn
     }
     lastModified {
         time
+    }
+}
+
+fragment embedFields on Embed {
+    renderUrl
+}
+
+fragment resolvedActorFields on ResolvedActor {
+    ... on CorpUser {
+        urn
+        ...entityDisplayNameFields
+    }
+    ... on CorpGroup {
+        urn
+        ...entityDisplayNameFields
+    }
+}
+
+fragment institutionalMemoryFields on InstitutionalMemory {
+    elements {
+        url
+        actor {
+            ...resolvedActorFields
+        }
+        description
+        created {
+            actor
+            time
+        }
+        associatedUrn
+    }
+}
+
+fragment documentationFields on Documentation {
+    documentations {
+        documentation
+        attribution {
+            time
+            actor {
+                urn
+                type
+                ...entityDisplayNameFields
+            }
+            source {
+                urn
+                type
+            }
+            sourceDetail {
+                key
+                value
+            }
+        }
     }
 }
 
@@ -96,92 +405,67 @@ fragment nonRecursiveDatasetFields on Dataset {
     name
     type
     origin
-    description
     uri
+    lastIngested
     platform {
-        name
-        info {
-            logoUrl
-        }
+        ...platformFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
     }
     platformNativeType
-    tags
     properties {
-        key
-        value
+        name
+        description
+        customProperties {
+            key
+            value
+        }
+        externalUrl
+        lastModified {
+            time
+            actor
+        }
+    }
+    structuredProperties {
+        properties {
+            ...structuredPropertiesFields
+        }
     }
     editableProperties {
+        name
         description
     }
     ownership {
         ...ownershipFields
     }
     institutionalMemory {
-        elements {
-            url
-            author {
-                urn
-                username
-            }
-            description
-            created {
-                actor
-                time
-            }
-        }
-    }
-    schema {
-        datasetUrn
-        name
-        platformUrn
-        version
-        hash
-        platformSchema {
-            ... on TableSchema {
-                schema
-            }
-            ... on KeyValueSchema {
-                keySchema
-                valueSchema
-            }
-        }
-        fields {
-            fieldPath
-            jsonPath
-            nullable
-            description
-            type
-            nativeDataType
-            recursive
-            globalTags {
-                ...globalTagsFields
-            }
-            glossaryTerms {
-                ...glossaryTerms
-            }
-        }
-        primaryKeys
-    }
-    editableSchemaMetadata {
-        editableSchemaFieldInfo {
-            fieldPath
-            description
-            globalTags {
-                ...globalTagsFields
-            }
-        }
-    }
-    deprecation {
-        actor
-        deprecated
-        note
-        decommissionTime
+        ...institutionalMemoryFields
     }
     globalTags {
         ...globalTagsFields
     }
     glossaryTerms {
         ...glossaryTerms
+    }
+    subTypes {
+        typeNames
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    container {
+        ...entityContainer
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    embed {
+        ...embedFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
     }
 }
 
@@ -191,7 +475,7 @@ fragment nonRecursiveDataFlowFields on DataFlow {
     orchestrator
     flowId
     cluster
-    info {
+    properties {
         name
         description
         project
@@ -207,11 +491,21 @@ fragment nonRecursiveDataFlowFields on DataFlow {
     ownership {
         ...ownershipFields
     }
+    platform {
+        ...platformFields
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    deprecation {
+        ...deprecationFields
+    }
 }
 
 fragment nonRecursiveDataJobFields on DataJob {
     urn
-    info {
+    properties {
         name
         description
         externalUrl
@@ -223,11 +517,23 @@ fragment nonRecursiveDataJobFields on DataJob {
     globalTags {
         ...globalTagsFields
     }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    deprecation {
+        ...deprecationFields
+    }
+    subTypes {
+        typeNames
+    }
 }
 
 fragment dataJobFields on DataJob {
     urn
     type
+    exists
+    lastIngested
     dataFlow {
         ...nonRecursiveDataFlowFields
     }
@@ -235,18 +541,7 @@ fragment dataJobFields on DataJob {
     ownership {
         ...ownershipFields
     }
-    inputOutput {
-        inputDatasets {
-            ...nonRecursiveDatasetFields
-        }
-        outputDatasets {
-            ...nonRecursiveDatasetFields
-        }
-        inputDatajobs {
-            ...nonRecursiveDataJobFields
-        }
-    }
-    info {
+    properties {
         name
         description
         externalUrl
@@ -261,31 +556,58 @@ fragment dataJobFields on DataJob {
     globalTags {
         ...globalTagsFields
     }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    deprecation {
+        ...deprecationFields
+    }
+    status {
+        removed
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    parentContainers {
+        ...parentContainersFields
+    }
+    privileges {
+        canEditLineage
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+    subTypes {
+        typeNames
+    }
+    health {
+        ...entityHealth
+    }
+    activeIncidents: incidents(start: 0, count: 1, state: ACTIVE) {
+        total
+    }
+    dataTransformLogic {
+        ...dataTransformLogicFields
+    }
 }
 
 fragment dashboardFields on Dashboard {
     urn
     type
+    exists
+    lastIngested
     tool
     dashboardId
-    info {
+    properties {
         name
         description
-        charts {
-            urn
-            tool
-            type
-            info {
-                name
-                description
-                inputs {
-                    urn
-                }
-            }
-            ownership {
-                ...ownershipFields
-            }
-        }
         customProperties {
             key
             value
@@ -300,10 +622,1223 @@ fragment dashboardFields on Dashboard {
             time
         }
     }
+    editableProperties {
+        description
+    }
     ownership {
         ...ownershipFields
     }
     globalTags {
         ...globalTagsFields
+    }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    platform {
+        ...platformFields
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    parentContainers {
+        ...parentContainersFields
+    }
+    status {
+        removed
+    }
+    embed {
+        ...embedFields
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+    statsSummary {
+        viewCount
+        uniqueUserCountLast30Days
+        topUsersLast30Days {
+            urn
+            type
+            username
+            properties {
+                displayName
+                firstName
+                lastName
+                fullName
+            }
+            editableProperties {
+                displayName
+                pictureLink
+            }
+        }
+    }
+    inputFields {
+        ...inputFieldsFields
+    }
+    subTypes {
+        typeNames
+    }
+    privileges {
+        canEditLineage
+        canEditEmbed
+    }
+    health {
+        ...entityHealth
+    }
+}
+
+fragment nonRecursiveMLFeature on MLFeature {
+    urn
+    type
+    exists
+    lastIngested
+    name
+    featureNamespace
+    description
+    dataType
+    properties {
+        description
+        dataType
+        version {
+            versionTag
+        }
+        sources {
+            urn
+            name
+            type
+            origin
+            description
+            uri
+            platform {
+                ...platformFields
+            }
+            platformNativeType
+        }
+    }
+    ownership {
+        ...ownershipFields
+    }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    status {
+        removed
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    tags {
+        ...globalTagsFields
+    }
+    editableProperties {
+        description
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+    featureTables: relationships(input: { types: ["Contains"], direction: INCOMING, start: 0, count: 100 }) {
+        relationships {
+            type
+            entity {
+                ... on MLFeatureTable {
+                    platform {
+                        ...platformFields
+                    }
+                }
+            }
+        }
+    }
+    structuredProperties {
+        properties {
+            ...structuredPropertiesFields
+        }
+    }
+}
+
+fragment nonRecursiveMLPrimaryKey on MLPrimaryKey {
+    urn
+    type
+    exists
+    lastIngested
+    name
+    featureNamespace
+    description
+    dataType
+    properties {
+        description
+        dataType
+        version {
+            versionTag
+        }
+        sources {
+            urn
+            name
+            type
+            origin
+            description
+            uri
+            platform {
+                ...platformFields
+            }
+            platformNativeType
+        }
+    }
+    ownership {
+        ...ownershipFields
+    }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    status {
+        removed
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    tags {
+        ...globalTagsFields
+    }
+    editableProperties {
+        description
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    featureTables: relationships(input: { types: ["KeyedBy"], direction: INCOMING, start: 0, count: 100 }) {
+        relationships {
+            type
+            entity {
+                ... on MLFeatureTable {
+                    platform {
+                        ...platformFields
+                    }
+                }
+            }
+        }
+    }
+    structuredProperties {
+        properties {
+            ...structuredPropertiesFields
+        }
+    }
+}
+
+fragment nonRecursiveMLFeatureTable on MLFeatureTable {
+    urn
+    type
+    exists
+    lastIngested
+    name
+    platform {
+        ...platformFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    description
+    properties {
+        description
+        mlFeatures {
+            ...nonRecursiveMLFeature
+        }
+        mlPrimaryKeys {
+            ...nonRecursiveMLPrimaryKey
+        }
+        customProperties {
+            key
+            value
+        }
+    }
+    ownership {
+        ...ownershipFields
+    }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    status {
+        removed
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    tags {
+        ...globalTagsFields
+    }
+    editableProperties {
+        description
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+    structuredProperties {
+        properties {
+            ...structuredPropertiesFields
+        }
+    }
+}
+
+fragment entitySchemaFieldEntityFields on SchemaFieldEntity {
+    deprecation {
+        ...deprecationFields
+    }
+    urn
+    fieldPath
+    type
+    structuredProperties {
+        properties {
+            ...structuredPropertiesFields
+        }
+    }
+    businessAttributes {
+        businessAttribute {
+            ...businessAttribute
+        }
+    }
+    documentation {
+        ...documentationFields
+    }
+}
+
+fragment entitySchemaFieldFields on SchemaField {
+    fieldPath
+    label
+    jsonPath
+    nullable
+    description
+    type
+    nativeDataType
+    recursive
+    isPartOfKey
+    isPartitioningKey
+    globalTags {
+        ...globalTagsFields
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    schemaFieldEntity {
+        ...entitySchemaFieldEntityFields
+    }
+}
+
+fragment schemaMetadataFields on SchemaMetadata {
+    aspectVersion
+    createdAt
+    datasetUrn
+    name
+    platformUrn
+    version
+    cluster
+    hash
+    platformSchema {
+        ... on TableSchema {
+            schema
+        }
+        ... on KeyValueSchema {
+            keySchema
+            valueSchema
+        }
+    }
+    fields {
+        ...entitySchemaFieldFields
+    }
+    primaryKeys
+    foreignKeys {
+        name
+        sourceFields {
+            fieldPath
+        }
+        foreignFields {
+            fieldPath
+        }
+        foreignDataset {
+            urn
+            name
+            type
+            origin
+            uri
+            properties {
+                description
+            }
+            platform {
+                ...platformFields
+            }
+            platformNativeType
+            ownership {
+                ...ownershipFields
+            }
+            globalTags {
+                ...globalTagsFields
+            }
+            glossaryTerms {
+                ...glossaryTerms
+            }
+        }
+    }
+}
+
+fragment nonRecursiveMLModel on MLModel {
+    urn
+    type
+    exists
+    lastIngested
+    name
+    description
+    origin
+    platform {
+        ...platformFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    ownership {
+        ...ownershipFields
+    }
+    properties {
+        name
+        description
+        date
+        created {
+            time
+            actor
+        }
+        lastModified {
+            time
+            actor
+        }
+        externalUrl
+        version
+        type
+        trainingMetrics {
+            name
+            description
+            value
+        }
+        hyperParams {
+            name
+            description
+            value
+        }
+        mlFeatures
+        groups {
+            urn
+            name
+            description
+            properties {
+                name
+            }
+        }
+        customProperties {
+            key
+            value
+        }
+        mlModelLineageInfo {
+            trainingJobs
+            downstreamJobs
+        }
+    }
+    globalTags {
+        ...globalTagsFields
+    }
+    status {
+        removed
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    tags {
+        ...globalTagsFields
+    }
+    editableProperties {
+        description
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    institutionalMemory {
+        ...institutionalMemoryFields
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+}
+
+fragment nonRecursiveMLModelGroupFields on MLModelGroup {
+    urn
+    type
+    exists
+    lastIngested
+    name
+    description
+    origin
+    platform {
+        ...platformFields
+    }
+    dataPlatformInstance {
+        ...dataPlatformInstanceFields
+    }
+    ownership {
+        ...ownershipFields
+    }
+    status {
+        removed
+    }
+    glossaryTerms {
+        ...glossaryTerms
+    }
+    domain {
+        ...entityDomain
+    }
+    ...entityDataProduct
+    tags {
+        ...globalTagsFields
+    }
+    editableProperties {
+        description
+    }
+    deprecation {
+        ...deprecationFields
+    }
+    properties {
+        name
+        description
+        created {
+            time
+            actor
+        }
+        lastModified {
+            time
+            actor
+        }
+        mlModelLineageInfo {
+            trainingJobs
+            downstreamJobs
+        }
+    }
+    browsePathV2 {
+        ...browsePathV2Fields
+    }
+}
+
+fragment platformFields on DataPlatform {
+    urn
+    type
+    lastIngested
+    name
+    properties {
+        type
+        displayName
+        datasetNameDelimiter
+        logoUrl
+    }
+    displayName
+    info {
+        type
+        displayName
+        datasetNameDelimiter
+        logoUrl
+    }
+}
+
+fragment nonConflictingPlatformFields on DataPlatform {
+    urn
+    type
+    name
+    properties {
+        displayName
+        datasetNameDelimiter
+        logoUrl
+    }
+    displayName
+    info {
+        type
+        displayName
+        datasetNameDelimiter
+        logoUrl
+    }
+}
+
+fragment dataPlatformInstanceFields on DataPlatformInstance {
+    urn
+    type
+    platform {
+        ...platformFields
+    }
+    instanceId
+}
+
+fragment entityContainer on Container {
+    urn
+    platform {
+        ...platformFields
+    }
+    properties {
+        name
+    }
+    subTypes {
+        typeNames
+    }
+    deprecation {
+        ...deprecationFields
+    }
+}
+
+fragment parentContainerFields on Container {
+    urn
+    type
+    properties {
+        name
+    }
+    subTypes {
+        typeNames
+    }
+}
+
+fragment domainEntitiesFields on Domain {
+    entities(input: { start: 0, count: 0 }) {
+        total
+    }
+    dataProducts: entities(input: { start: 0, count: 0, filters: [{ field: "_entityType", values: "DATA_PRODUCT" }] }) {
+        total
+    }
+    children: relationships(input: { types: ["IsPartOf"], direction: INCOMING, start: 0, count: 0 }) {
+        total
+    }
+}
+
+fragment entityDomain on DomainAssociation {
+    domain {
+        urn
+        type
+        properties {
+            name
+            description
+        }
+        parentDomains {
+            ...parentDomainsFields
+        }
+        ...domainEntitiesFields
+    }
+    associatedUrn
+}
+
+fragment entityDataProduct on Entity {
+    dataProduct: relationships(input: { types: ["DataProductContains"], direction: INCOMING, start: 0, count: 1 }) {
+        relationships {
+            type
+            entity {
+                urn
+                type
+                ... on DataProduct {
+                    properties {
+                        name
+                        description
+                    }
+                    domain {
+                        ...entityDomain
+                    }
+                }
+            }
+        }
+    }
+}
+
+fragment inputFieldsFields on InputFields {
+    fields {
+        schemaFieldUrn
+        schemaField {
+            ...entitySchemaFieldFields
+        }
+    }
+}
+
+fragment browsePathV2Fields on BrowsePathV2 {
+    path {
+        name
+        entity {
+            urn
+            type
+            ... on Container {
+                properties {
+                    name
+                }
+            }
+            ... on DataFlow {
+                properties {
+                    name
+                }
+            }
+            ... on DataPlatformInstance {
+                platform {
+                    name
+                    properties {
+                        displayName
+                    }
+                }
+                instanceId
+            }
+            ... on Dataset {
+                properties {
+                    name
+                }
+            }
+        }
+    }
+}
+
+fragment entityDisplayNameFields on Entity {
+    urn
+    type
+    ... on Dataset {
+        name
+        properties {
+            name
+            qualifiedName
+        }
+    }
+    ... on CorpUser {
+        username
+        properties {
+            displayName
+            title
+            firstName
+            lastName
+            fullName
+            email
+        }
+        info {
+            active
+            displayName
+            title
+            firstName
+            lastName
+            fullName
+            email
+        }
+    }
+    ... on CorpGroup {
+        name
+        info {
+            displayName
+        }
+    }
+    ... on Dashboard {
+        dashboardId
+        properties {
+            name
+        }
+    }
+    ... on Chart {
+        chartId
+        properties {
+            name
+        }
+    }
+    ... on DataFlow {
+        properties {
+            name
+        }
+    }
+    ... on DataJob {
+        jobId
+        properties {
+            name
+        }
+    }
+    ... on GlossaryTerm {
+        name
+        hierarchicalName
+        properties {
+            name
+        }
+    }
+    ... on GlossaryNode {
+        properties {
+            name
+            description
+        }
+    }
+    ... on Domain {
+        properties {
+            name
+        }
+    }
+    ... on Container {
+        properties {
+            name
+        }
+    }
+    ... on MLFeatureTable {
+        name
+    }
+    ... on MLFeature {
+        name
+    }
+    ... on MLPrimaryKey {
+        name
+    }
+    ... on MLModel {
+        name
+    }
+    ... on MLModelGroup {
+        name
+    }
+    ... on Tag {
+        name
+        properties {
+            name
+            colorHex
+        }
+    }
+    ... on DataPlatform {
+        ...nonConflictingPlatformFields
+    }
+    ... on DataProduct {
+        properties {
+            name
+        }
+    }
+    ... on DataPlatformInstance {
+        instanceId
+    }
+    ... on StructuredPropertyEntity {
+        definition {
+            displayName
+            qualifiedName
+        }
+    }
+    ... on SchemaFieldEntity {
+        fieldPath
+    }
+    ... on OwnershipTypeEntity {
+        info {
+            name
+        }
+    }
+}
+
+fragment ermodelrelationPropertiesFields on ERModelRelationshipProperties {
+    name
+    source {
+        ...datasetERModelRelationshipFields
+    }
+    destination {
+        ...datasetERModelRelationshipFields
+    }
+    relationshipFieldMappings {
+        ...relationshipFieldMapping
+    }
+    createdTime
+    createdActor {
+        urn
+    }
+}
+
+fragment relationshipFieldMapping on RelationshipFieldMapping {
+    sourceField
+    destinationField
+}
+
+fragment ermodelrelationEditablePropertiesFields on ERModelRelationshipEditableProperties {
+    description
+    name
+}
+
+fragment datasetERModelRelationshipFields on Dataset {
+    urn
+    name
+    properties {
+        name
+        description
+    }
+    editableProperties {
+        description
+    }
+    schemaMetadata {
+        ...schemaMetadataFields
+    }
+}
+fragment structuredPropertyFields on StructuredPropertyEntity {
+    urn
+    type
+    definition {
+        displayName
+        qualifiedName
+        description
+        cardinality
+        immutable
+        valueType {
+            urn
+            type
+            info {
+                type
+                displayName
+            }
+        }
+        entityTypes {
+            urn
+            type
+            info {
+                type
+            }
+        }
+        cardinality
+        typeQualifier {
+            allowedTypes {
+                urn
+                type
+                info {
+                    type
+                    displayName
+                }
+            }
+        }
+        allowedValues {
+            value {
+                ... on StringValue {
+                    stringValue
+                }
+                ... on NumberValue {
+                    numberValue
+                }
+            }
+            description
+        }
+        created {
+            time
+            actor {
+                urn
+                editableProperties {
+                    displayName
+                    pictureLink
+                }
+                ...entityDisplayNameFields
+            }
+        }
+        lastModified {
+            time
+            actor {
+                urn
+                editableProperties {
+                    displayName
+                    pictureLink
+                }
+                ...entityDisplayNameFields
+            }
+        }
+    }
+    settings {
+        isHidden
+        showInSearchFilters
+        showAsAssetBadge
+        showInAssetSummary
+        showInColumnsTable
+    }
+}
+
+fragment structuredPropertiesFields on StructuredPropertiesEntry {
+    structuredProperty {
+        exists
+        ...structuredPropertyFields
+    }
+    values {
+        ... on StringValue {
+            stringValue
+        }
+        ... on NumberValue {
+            numberValue
+        }
+    }
+    valueEntities {
+        urn
+        type
+        ...entityDisplayNameFields
+    }
+    associatedUrn
+}
+
+fragment autoRenderAspectFields on RawAspect {
+    aspectName
+    payload
+    renderSpec {
+        displayType
+        displayName
+        key
+    }
+}
+
+fragment formAssociationFields on FormAssociation {
+    associatedUrn
+    incompletePrompts {
+        ...formPromptAssociationFields
+    }
+    completedPrompts {
+        ...formPromptAssociationFields
+    }
+    form {
+        urn
+        type
+        info {
+            name
+            description
+            type
+            prompts {
+                id
+                formUrn
+                title
+                description
+                type
+                required
+                structuredPropertyParams {
+                    structuredProperty {
+                        ...structuredPropertyFields
+                    }
+                }
+            }
+            actors {
+                owners
+                isAssignedToMe
+            }
+        }
+        ownership {
+            ...ownershipFields
+        }
+    }
+}
+
+fragment formPromptAssociationFields on FormPromptAssociation {
+    id
+    lastModified {
+        time
+        actor {
+            urn
+            type
+            ...entityDisplayNameFields
+        }
+    }
+    fieldAssociations {
+        completedFieldPrompts {
+            fieldPath
+            lastModified {
+                time
+                actor {
+                    urn
+                    type
+                    ...entityDisplayNameFields
+                }
+            }
+        }
+    }
+}
+
+fragment entityHealth on Health {
+    type
+    status
+    message
+    causes
+}
+
+fragment formsFields on Forms {
+    completedForms {
+        ...formAssociationFields
+    }
+    incompleteForms {
+        ...formAssociationFields
+    }
+    verifications {
+        form {
+            urn
+        }
+        lastModified {
+            time
+            actor {
+                urn
+                type
+                ...entityDisplayNameFields
+            }
+        }
+    }
+}
+
+fragment entityPrivileges on EntityPrivileges {
+    canEditLineage
+    canEditDomains
+    canEditDataProducts
+    canEditTags
+    canEditGlossaryTerms
+    canEditDescription
+    canEditLinks
+    canEditOwners
+    canEditAssertions
+    canEditIncidents
+    canEditDeprecation
+    canEditSchemaFieldTags
+    canEditSchemaFieldGlossaryTerms
+    canEditSchemaFieldDescription
+    canEditQueries
+    canEditEmbed
+    canManageEntity
+    canManageChildren
+    canEditProperties
+    canViewDatasetUsage
+    canViewDatasetProfile
+    canViewDatasetOperations
+}
+
+fragment businessAttribute on BusinessAttributeAssociation {
+    businessAttribute {
+        urn
+        type
+        ownership {
+            ...ownershipFields
+        }
+        properties {
+            name
+            description
+            businessAttributeDataType: type
+            lastModified {
+                time
+            }
+            created {
+                time
+            }
+            tags {
+                tags {
+                    tag {
+                        urn
+                        name
+                        properties {
+                            name
+                        }
+                    }
+                    associatedUrn
+                }
+            }
+            glossaryTerms {
+                terms {
+                    term {
+                        urn
+                        type
+                        properties {
+                            name
+                        }
+                    }
+                    associatedUrn
+                }
+            }
+        }
+    }
+    associatedUrn
+}
+
+fragment datasetProfileFields on DatasetProfile {
+    rowCount
+    columnCount
+    sizeInBytes
+    timestampMillis
+    partitionSpec {
+        type
+        partition
+        timePartition {
+            startTimeMillis
+            durationMillis
+        }
+    }
+    fieldProfiles {
+        fieldPath
+        uniqueCount
+        uniqueProportion
+        nullCount
+        nullProportion
+        min
+        max
+        mean
+        median
+        stdev
+        sampleValues
+        quantiles {
+            quantile
+            value
+        }
+        distinctValueFrequencies {
+            value
+            frequency
+        }
+    }
+}
+
+fragment notes on Entity {
+    notes: relationships(input: { types: ["PostTarget"], direction: INCOMING, start: 0, count: 100 }) {
+        total
+        relationships {
+            type
+            entity {
+                ... on Post {
+                    urn
+                    type
+                    postType
+                    lastModified {
+                        time
+                        actor
+                    }
+                    content {
+                        contentType
+                        title
+                        description
+                        link
+                        media {
+                            type
+                            location
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fragment dataTransformLogicFields on DataTransformLogic {
+    transforms {
+        queryStatement {
+            value
+            language
+        }
     }
 }

@@ -14,11 +14,22 @@ record DataPlatformInfo {
    * Name of the data platform
    */
   @validate.strlen.max = 15
+  @Searchable = {
+    "fieldType": "WORD_GRAM",
+    "enableAutocomplete": false,
+    "boostScore": 10.0,
+    "fieldNameAliases": [ "_entityName" ]
+  }
   name: string
 
   /**
    * The name that will be used for displaying a platform type.
    */
+  @Searchable = {
+    "fieldType": "WORD_GRAM",
+    "enableAutocomplete": true,
+    "boostScore": 10.0
+  }
   displayName: optional string
 
   /**

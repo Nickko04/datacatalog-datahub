@@ -17,6 +17,9 @@ import com.linkedin.common.Status
 import com.linkedin.common.Cost
 import com.linkedin.common.Deprecation
 import com.linkedin.common.BrowsePaths
+import com.linkedin.common.BrowsePathsV2
+import com.linkedin.common.GlobalTags
+import com.linkedin.common.DataPlatformInstance
 
 /**
  * A union of all supported metadata aspects for a ML Model
@@ -38,5 +41,8 @@ typeref MLModelAspect = union[
   Status,
   Cost,
   Deprecation,
-  BrowsePaths
+  BrowsePaths,
+  GlobalTags,
+  DataPlatformInstance,
+  BrowsePathsV2
 ]

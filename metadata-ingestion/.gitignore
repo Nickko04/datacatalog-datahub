@@ -2,8 +2,12 @@
 .vscode/
 output
 pvenv36/
+/venv*/
 bq_credentials.json
+junit.*.xml
 /tmp
+*.bak
+custom-package/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -57,6 +61,10 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+junit.*xml
+
+# Integration tests artifacts
+tests/integrations/
 
 # Translations
 *.mo
@@ -134,3 +142,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Generated classes
+src/datahub/metadata/
+.preflight_sentinel

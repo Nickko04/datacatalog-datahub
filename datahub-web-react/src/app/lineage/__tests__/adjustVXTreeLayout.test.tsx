@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tree, hierarchy } from '@vx/hierarchy';
+import { Tree, hierarchy } from '@visx/hierarchy';
 import { render } from '@testing-library/react';
 
 import {
@@ -14,9 +14,9 @@ import {
 import constructTree from '../utils/constructTree';
 import extendAsyncEntities from '../utils/extendAsyncEntities';
 import adjustVXTreeLayout from '../utils/adjustVXTreeLayout';
-import { NodeData, Direction, FetchedEntities } from '../types';
+import { NodeData, Direction, EntityAndType } from '../types';
 import { getTestEntityRegistry } from '../../../utils/test-utils/TestPageContainer';
-import { EntityType } from '../../../types.generated';
+import { Dataset, Entity, EntityType } from '../../../types.generated';
 
 const testEntityRegistry = getTestEntityRegistry();
 
@@ -30,12 +30,14 @@ describe('adjustVXTreeLayout', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity, type: EntityType.Dataset } as EntityAndType,
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
         const downstreamData = hierarchy(
@@ -44,6 +46,7 @@ describe('adjustVXTreeLayout', () => {
                 mockFetchedEntities,
                 Direction.Upstream,
                 testEntityRegistry,
+                {},
             ),
         );
 
@@ -78,12 +81,14 @@ describe('adjustVXTreeLayout', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity, type: EntityType.Dataset } as EntityAndType,
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
         const upstreamData = hierarchy(
@@ -92,6 +97,7 @@ describe('adjustVXTreeLayout', () => {
                 mockFetchedEntities,
                 Direction.Upstream,
                 testEntityRegistry,
+                {},
             ),
         );
 
@@ -131,20 +137,23 @@ describe('adjustVXTreeLayout', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity, type: EntityType.Dataset } as EntityAndType,
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
         const upstreamData = hierarchy(
             constructTree(
-                { entity: dataset7WithSelfReferentialLineage, type: EntityType.Dataset },
+                { entity: dataset7WithSelfReferentialLineage as Entity, type: EntityType.Dataset } as EntityAndType,
                 mockFetchedEntities,
                 Direction.Upstream,
                 testEntityRegistry,
+                {},
             ),
         );
 
@@ -173,12 +182,14 @@ describe('adjustVXTreeLayout', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity as Dataset, type: EntityType.Dataset },
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
         const upstreamData = hierarchy(
@@ -187,6 +198,7 @@ describe('adjustVXTreeLayout', () => {
                 mockFetchedEntities,
                 Direction.Upstream,
                 testEntityRegistry,
+                {},
             ),
         );
 
@@ -215,12 +227,14 @@ describe('adjustVXTreeLayout', () => {
         const mockFetchedEntities = fetchedEntities.reduce(
             (acc, entry) =>
                 extendAsyncEntities(
+                    {},
+                    {},
                     acc,
                     testEntityRegistry,
-                    { entity: entry.entity, type: EntityType.Dataset },
+                    { entity: entry.entity as Dataset, type: EntityType.Dataset },
                     entry.fullyFetched,
                 ),
-            {} as FetchedEntities,
+            new Map(),
         );
 
         const upstreamData = hierarchy(
@@ -229,6 +243,7 @@ describe('adjustVXTreeLayout', () => {
                 mockFetchedEntities,
                 Direction.Upstream,
                 testEntityRegistry,
+                {},
             ),
         );
 

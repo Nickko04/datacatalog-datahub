@@ -4,28 +4,32 @@ import com.linkedin.datahub.upgrade.Upgrade;
 import com.linkedin.datahub.upgrade.UpgradeCleanupStep;
 import com.linkedin.datahub.upgrade.UpgradeStep;
 import com.linkedin.metadata.graph.GraphService;
-import io.ebean.EbeanServer;
+import com.linkedin.metadata.utils.elasticsearch.IndexConvention;
+import io.ebean.Database;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.elasticsearch.client.RestHighLevelClient;
-
+import javax.annotation.Nullable;
+import org.opensearch.client.RestHighLevelClient;
 
 public class NoCodeCleanupUpgrade implements Upgrade {
 
   private final List<UpgradeStep> _steps;
   private final List<UpgradeCleanupStep> _cleanupSteps;
 
-  // Upgrade requires the EbeanServer.
+  // Upgrade requires the Database.
   public NoCodeCleanupUpgrade(
-      final EbeanServer server,
+      @Nullable final Database server,
       final GraphService graphClient,
-      final RestHighLevelClient searchClient) {
-    _steps = buildUpgradeSteps(
-        server,
-        graphClient,
-        searchClient);
-    _cleanupSteps = buildCleanupSteps();
+      final RestHighLevelClient searchClient,
+      final IndexConvention indexConvention) {
+    if (server != null) {
+      _steps = buildUpgradeSteps(server, graphClient, searchClient, indexConvention);
+      _cleanupSteps = buildCleanupSteps();
+    } else {
+      _steps = List.of();
+      _cleanupSteps = List.of();
+    }
   }
 
   @Override
@@ -48,14 +52,15 @@ public class NoCodeCleanupUpgrade implements Upgrade {
   }
 
   private List<UpgradeStep> buildUpgradeSteps(
-      final EbeanServer server,
+      final Database server,
       final GraphService graphClient,
-      final RestHighLevelClient searchClient) {
+      final RestHighLevelClient searchClient,
+      final IndexConvention indexConvention) {
     final List<UpgradeStep> steps = new ArrayList<>();
     steps.add(new NoCodeUpgradeQualificationStep(server));
     steps.add(new DeleteAspectTableStep(server));
     steps.add(new DeleteLegacyGraphRelationshipsStep(graphClient));
-    steps.add(new DeleteLegacySearchIndicesStep(searchClient));
+    steps.add(new DeleteLegacySearchIndicesStep(searchClient, indexConvention));
     return steps;
   }
 }

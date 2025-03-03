@@ -7,5 +7,11 @@ record CustomProperties {
   /**
    * Custom property bag.
    */
+  @Searchable = {
+    "/*": {
+      "fieldType": "TEXT",
+      "queryByDefault": true
+    }
+  }
   customProperties: map[string, string] = { }
 }
